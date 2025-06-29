@@ -11,3 +11,4 @@ checkpoints/*.pt
 demo/backend/checkpoints/*.pt
 test.ipynb
 data/*
+sam2_logs/*

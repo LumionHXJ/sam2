@@ -13,9 +13,9 @@ scratch:
 
 dataset:
   # PATHS to Dataset
-  img_folder: null # PATH to MOSE JPEGImages folder
-  gt_folder: null  # PATH to MOSE Annotations folder
-  file_list_txt: training/assets/MOSE_sample_train_list.txt # Optional PATH to filelist containing a subset of videos to be used for training
+  img_folder: data/OBIMD_rubbing # PATH to MOSE JPEGImages folder
+  gt_folder: data/OBIMD_facsimile_no_boarder  # PATH to MOSE Annotations folder
+  file_list_txt: data/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 2
 
 # Video transforms
@@ -62,15 +62,18 @@ trainer:
   seed_value: 123
 
   model:
-    _target_: training.model.sam2.SAM2Train
+    _target_: sam2.modeling.sam2_base.SAM2Base
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
       scalp: 1
       trunk:
         _target_: sam2.modeling.backbones.hieradet.Hiera
-        embed_dim: 112
+        embed_dim: 144
         num_heads: 2
-        drop_path_rate: 0.1
+        stages: [2, 6, 36, 4]
+        global_att_blocks: [23, 33, 43]
+        window_pos_embed_bkg_spatial_size: [7, 7]
+        window_spec: [8, 4, 16, 8]
       neck:
         _target_: sam2.modeling.backbones.image_encoder.FpnNeck
         position_encoding:
@@ -80,7 +83,7 @@ trainer:
           scale: null
           temperature: 10000
         d_model: 256
-        backbone_channel_list: [896, 448, 224, 112]
+        backbone_channel_list: [1152, 576, 288, 144]
         fpn_top_down_levels: [2, 3]  # output level 0 and 1 directly use the backbone features
         fpn_interp_model: nearest
 
@@ -143,7 +146,7 @@ trainer:
           num_layers: 2
 
     num_maskmem: 7
-    image_size: ${scratch.resolution}
+    image_size: 1024
     # apply scaled sigmoid on mask logits for memory encoder, and directly feed input mask as output mask
     sigmoid_scale_for_mem_enc: 20.0
     sigmoid_bias_for_mem_enc: -10.0
@@ -174,29 +177,7 @@ trainer:
     multimask_max_pt_num: 1
     use_mlp_for_obj_ptr_proj: true
     # Compilation flag
-    # compile_image_encoder: False
-
-    ####### Training specific params #######
-    # box/point input and corrections
-    prob_to_use_pt_input_for_train: 0.5
-    prob_to_use_pt_input_for_eval: 0.0
-    prob_to_use_box_input_for_train: 0.5  # 0.5*0.5 = 0.25 prob to use box instead of points
-    prob_to_use_box_input_for_eval: 0.0
-    prob_to_sample_from_gt_for_train: 0.1  # with a small prob, sampling correction points from GT mask instead of prediction errors
-    num_frames_to_correct_for_train: 2  # iteratively sample on random 1~2 frames (always include the first frame)
-    num_frames_to_correct_for_eval: 1  # only iteratively sample on first frame
-    rand_frames_to_correct_for_train: True  # random #init-cond-frame ~ 2
-    add_all_frames_to_correct_as_cond: True  # when a frame receives a correction click, it becomes a conditioning frame (even if it's not initially a conditioning frame)
-    # maximum 2 initial conditioning frames
-    num_init_cond_frames_for_train: 2
-    rand_init_cond_frames_for_train: True  # random 1~2
-    num_correction_pt_per_frame: 7
-    use_act_ckpt_iterative_pt_sampling: false
-    
-
-    
-    num_init_cond_frames_for_eval: 1  # only mask on the first frame
-    forward_backbone_per_frame_for_eval: True
+    compile_image_encoder: False
     
 
   data:
@@ -205,25 +186,20 @@ trainer:
       phases_per_epoch: ${scratch.phases_per_epoch}
       batch_sizes:
         - ${scratch.train_batch_size}
-
       datasets:
-        - _target_: training.dataset.utils.RepeatFactorWrapper
-          dataset:
-            _target_: training.dataset.utils.ConcatDataset
-            datasets:
-            - _target_: training.dataset.vos_dataset.VOSDataset
-              transforms: ${vos.train_transforms}
-              training: true
-              video_dataset:
-                _target_: training.dataset.vos_raw_dataset.PNGRawDataset
-                img_folder: ${dataset.img_folder}
-                gt_folder: ${dataset.gt_folder}
-                file_list_txt: ${dataset.file_list_txt}
-              sampler:
+        - _target_: training.dataset.vos_dataset.VOSDataset
+          training: true
+          video_dataset:
+            _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
+            img_folder: ${dataset.img_folder}
+            gt_folder: ${dataset.gt_folder}
+            file_list_txt: ${dataset.file_list_txt}
+          sampler:
                 _target_: training.dataset.vos_sampler.RandomUniformSampler
                 num_frames: ${scratch.num_frames}
                 max_num_objects: ${scratch.max_num_objects}
-              multiplier: ${dataset.multiplier}
+          transforms: ${vos.train_transforms}
+          multiplier: ${dataset.multiplier}
       shuffle: True
       num_workers: ${scratch.num_train_workers}
       pin_memory: True
@@ -323,7 +299,7 @@ trainer:
 
 launcher:
   num_nodes: 1
-  gpus_per_node: 8
+  gpus_per_node: 4
   experiment_log_dir: null # Path to log directory, defaults to ./sam2_logs/${config_name}
 
 # SLURM args if running on a cluster
