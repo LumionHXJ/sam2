@@ -8,7 +8,7 @@ import glob
 import logging
 import os
 from dataclasses import dataclass
-
+import re
 from typing import List, Optional
 
 import pandas as pd
@@ -26,6 +26,7 @@ from training.dataset.vos_segment_loader import (
     SA1BSegmentLoader,
 )
 
+OBI_TAG = {'h': 1, 'hb': 2, 'tn': 3, 'hd': 4}
 
 @dataclass
 class VOSFrame:
@@ -203,9 +204,11 @@ class SA1BRawDataset(VOSRawDataset):
         frames = []
         for frame_idx in range(self.num_frames):
             frames.append(VOSFrame(frame_idx, image_path=video_frame_path))
-        video_name = video_name.split("_")[-1]  # filename is sa_{int}
+        pattern = r'([a-zA-Z]+)(\d+)'
+        match = re.match(pattern, video_name)
+        video_id = OBI_TAG[match.group(1)] * 1e5 + int(match.group(2)) # filename is sa_{int}
         # video id needs to be image_id to be able to load correct annotation file during eval
-        video = VOSVideo(video_name, int(video_name), frames)
+        video = VOSVideo(video_name, video_id, frames)
         return video, segment_loader
 
     def __len__(self):

@@ -2,9 +2,9 @@
 
 scratch:
   resolution: 1024
-  train_batch_size: 1
+  train_batch_size: 8
   num_train_workers: 10
-  num_frames: 8
+  num_frames: 1
   max_num_objects: 3
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
@@ -14,7 +14,7 @@ scratch:
 dataset:
   # PATHS to Dataset
   img_folder: data/OBIMD_rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_facsimile_no_boarder  # PATH to MOSE Annotations folder
+  gt_folder: data/OBIMD_facsimile_json # PATH to MOSE Annotations folder
   file_list_txt: data/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 2
 
@@ -62,7 +62,7 @@ trainer:
   seed_value: 123
 
   model:
-    _target_: sam2.modeling.sam2_base.SAM2Base
+    _target_: training.model.sam2.SAM2Train
     image_encoder:
       _target_: sam2.modeling.backbones.image_encoder.ImageEncoder
       scalp: 1
