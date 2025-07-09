@@ -7,16 +7,23 @@ from PIL import Image
 from pycocotools import mask as maskUtils
 from tqdm import tqdm
 
-with open('data/label.json') as f:
+LABEL_JSON = 'data/OBIMD_test100/label.json'
+IMAGE_ROOT = 'data/OBIMD_test100/JPEGImages'
+OUTPUT_DIR = 'data/OBIMD_test100/facsimile_json'
+SEGMAP_ROOT = 'data/OBIMD_test100/VOC'
+EXPAND = 0.1
+
+with open(LABEL_JSON) as f:
     datas = json.load(f)
-image_root = 'data/OBIMD_rubbing'
-output_dir = 'data/OBIMD_facsimile_json'
+os.makedirs(OUTPUT_DIR, exist_ok=True)
 char_id = 0
 for image_id, data in tqdm(enumerate(datas)):
     image_name = os.path.basename(data['Rubbing'])
-    facsimile = cv2.imread(os.path.join('data/OBIMD_facsimile_no_boarder', image_name), flags=cv2.IMREAD_GRAYSCALE)
+    facsimile = cv2.imread(os.path.join(SEGMAP_ROOT, image_name.replace('jpg', 'png')), flags=cv2.IMREAD_GRAYSCALE)
+    if facsimile is None:
+        continue
     # CHECK SHAPE etc.
-    W, H = Image.open(os.path.join(image_root, image_name)).size
+    W, H = Image.open(os.path.join(IMAGE_ROOT, image_name)).size
     image_info = dict(image_id=image_id, width=W, height=H, file_name=image_name)
     annotations = []
     oracle_chars = []
@@ -31,6 +38,10 @@ for image_id, data in tqdm(enumerate(datas)):
     for char in oracle_chars:
         mask = np.zeros_like(facsimile)
         x, y, w, h = list(map(int, char['Position'].split(',')))
+        x = max(0, int(x - EXPAND * w))
+        y = max(0, int(y - EXPAND * h))
+        w = int(w + 2 * EXPAND * w)
+        h = int(h + 2 * EXPAND * h)
         mask[y:min(y+h, H), x:min(x+w, W)] = facsimile[y:min(y+h, H), x:min(x+w, W)] # TOFIX: check area?
         for _char in oracle_chars:
             if char == _char:
@@ -44,5 +55,5 @@ for image_id, data in tqdm(enumerate(datas)):
         bbox = maskUtils.toBbox(rle)
         annotations.append(dict(id=char_id, bbox=bbox.astype(int).tolist(), area=int(area), segmentation=rle))
         char_id += 1
-    with open(os.path.join(output_dir, f'{image_name.split(".")[0]}.json'), 'w') as f:
+    with open(os.path.join(OUTPUT_DIR, f'{image_name.split(".")[0]}.json'), 'w') as f:
         json.dump(dict(image_info=image_info, annotations=annotations), f, indent=2)
