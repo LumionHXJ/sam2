@@ -194,7 +194,6 @@ class MultiStepMultiMasksAndIous(nn.Module):
         with the lowest focal+dice loss between predicted mask and ground-truth.
         If `supervise_all_iou` is True, we backpropagate ious losses for all predicted masks.
         """
-
         target_masks = targets.unsqueeze(1).float()
         assert target_masks.dim() == 4  # [N, 1, H, W]
         src_masks_list = outputs["multistep_pred_multimasks_high_res"]
@@ -301,7 +300,4 @@ class MultiStepMultiMasksAndIous(nn.Module):
         for loss_key, weight in self.weight_dict.items():
             if loss_key not in losses:
                 raise ValueError(f"{type(self)} doesn't compute {loss_key}")
-            if weight != 0:
-                reduced_loss += losses[loss_key] * weight
-
-        return reduced_loss
+            if weight != 0

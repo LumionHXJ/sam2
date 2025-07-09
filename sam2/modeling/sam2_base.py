@@ -420,7 +420,7 @@ class SAM2Base(torch.nn.Module):
         # Use -10/+10 as logits for neg/pos pixels (very close to 0/1 in prob after sigmoid).
         out_scale, out_bias = 20.0, -10.0  # sigmoid(-10.0)=4.5398e-05
         mask_inputs_float = mask_inputs.float()
-        high_res_masks = mask_inputs_float * out_scale + out_bias
+        high_res_masks = mask_inputs_float * out_scale + out_bias # 这一步直接转化为soft logits，和通常情况decoder输出对齐
         low_res_masks = F.interpolate(
             high_res_masks,
             size=(high_res_masks.size(-2) // 4, high_res_masks.size(-1) // 4),
