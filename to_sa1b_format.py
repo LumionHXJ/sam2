@@ -7,11 +7,12 @@ from PIL import Image
 from pycocotools import mask as maskUtils
 from tqdm import tqdm
 
-LABEL_JSON = 'data/OBIMD_test100/label.json'
-IMAGE_ROOT = 'data/OBIMD_test100/JPEGImages'
-OUTPUT_DIR = 'data/OBIMD_test100/facsimile_json'
-SEGMAP_ROOT = 'data/OBIMD_test100/VOC'
+LABEL_JSON = 'data/OBIMD_global_reverse/label.json'
+IMAGE_ROOT = 'data/OBIMD_global_reverse/rubbing'
+OUTPUT_DIR = 'data/OBIMD_global_reverse/facsimile_json'
+SEGMAP_ROOT = 'data/OBIMD_global_reverse/facsimile_no_boarder'
 EXPAND = 0.1
+GLOBAL_BOX_PROMPT = True
 
 with open(LABEL_JSON) as f:
     datas = json.load(f)
@@ -19,7 +20,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 char_id = 0
 for image_id, data in tqdm(enumerate(datas)):
     image_name = os.path.basename(data['Rubbing'])
-    facsimile = cv2.imread(os.path.join(SEGMAP_ROOT, image_name.replace('jpg', 'png')), flags=cv2.IMREAD_GRAYSCALE)
+    facsimile = cv2.imread(os.path.join(SEGMAP_ROOT, image_name), flags=cv2.IMREAD_GRAYSCALE)
     if facsimile is None:
         continue
     # CHECK SHAPE etc.
@@ -49,6 +50,15 @@ for image_id, data in tqdm(enumerate(datas)):
             _x, _y, _w, _h = list(map(int, _char['Position'].split(',')))
             mask[_y:min(_y+_h, H), _x:min(_x+_w, W)] = 0 # remove other chars
         mask = np.asfortranarray(mask)
+        rle = maskUtils.encode(mask)
+        rle['counts'] = rle['counts'].decode('utf-8')
+        area = maskUtils.area(rle)
+        bbox = maskUtils.toBbox(rle)
+        annotations.append(dict(id=char_id, bbox=bbox.astype(int).tolist(), area=int(area), segmentation=rle))
+        char_id += 1
+    if GLOBAL_BOX_PROMPT:
+        # 加入一个全局的prompt：暂时先取反
+        mask = np.asfortranarray(255 - facsimile)
         rle = maskUtils.encode(mask)
         rle['counts'] = rle['counts'].decode('utf-8')
         area = maskUtils.area(rle)
