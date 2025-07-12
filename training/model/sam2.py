@@ -158,6 +158,10 @@ class SAM2Train(SAM2Base):
             stage_id: masks.unsqueeze(1)  # [B, 1, H_im, W_im]
             for stage_id, masks in enumerate(input.masks)
         }
+        gt_boxes_per_frame = {
+            stage_id: boxes.unsqueeze(1)  # [B, 1, 4]
+            for stage_id, boxes in enumerate(input.boxes)
+        }
         # gt_masks_per_frame = input.masks.unsqueeze(2) # [T,B,1,H_im,W_im] keep everything in tensor form
         backbone_out["gt_masks_per_frame"] = gt_masks_per_frame
         num_frames = input.num_frames

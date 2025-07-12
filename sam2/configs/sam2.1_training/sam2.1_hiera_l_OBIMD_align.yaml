@@ -13,9 +13,9 @@ scratch:
 
 dataset:
   # PATHS to Dataset
-  img_folder: data/OBIMD_global/rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_global/facsimile_json # PATH to MOSE Annotations folder
-  file_list_txt: data/OBIMD_global/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
+  img_folder: data/OBIMD_align/rubbing # PATH to MOSE JPEGImages folder
+  gt_folder: data/OBIMD_align/facsimile_json # PATH to MOSE Annotations folder
+  file_list_txt: data/OBIMD_align/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 1
 
 # Video transforms
