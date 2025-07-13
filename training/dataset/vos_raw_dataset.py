@@ -27,6 +27,7 @@ from training.dataset.vos_segment_loader import (
 )
 
 OBI_TAG = {'h': 1, 'hb': 2, 'tn': 3, 'hd': 4}
+OBI_SUFFIX = {"":0, "正":1, "反":2, "甲":3, "乙":4, "丙":5, "丁":6, "戊":7, "臼":8}
 
 @dataclass
 class VOSFrame:
@@ -204,9 +205,9 @@ class SA1BRawDataset(VOSRawDataset):
         frames = []
         for frame_idx in range(self.num_frames):
             frames.append(VOSFrame(frame_idx, image_path=video_frame_path))
-        pattern = r'([a-zA-Z]+)(\d+)'
+        pattern = r'([a-zA-Z]+)(\d+)([\u4e00-\u9fa5]?)'
         match = re.match(pattern, video_name)
-        video_id = OBI_TAG[match.group(1)] * 1e5 + int(match.group(2)) # filename is sa_{int}
+        video_id = OBI_TAG[match.group(1)] * 1e5 + int(match.group(2)) + OBI_SUFFIX[match.group(3)] * 1e6 # filename is sa_{int}
         # video id needs to be image_id to be able to load correct annotation file during eval
         video = VOSVideo(video_name, video_id, frames)
         return video, segment_loader

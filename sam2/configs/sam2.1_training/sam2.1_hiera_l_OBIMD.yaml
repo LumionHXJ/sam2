@@ -2,14 +2,14 @@
 
 scratch:
   resolution: 1024
-  train_batch_size: 2
+  train_batch_size: 4
   num_train_workers: 10
   num_frames: 1
-  max_num_objects: 5
+  max_num_objects: 8
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
   phases_per_epoch: 1
-  num_epochs: 40
+  num_epochs: 1
 
 dataset:
   # PATHS to Dataset
@@ -207,19 +207,36 @@ trainer:
       batch_sizes:
         - ${scratch.train_batch_size}
       datasets:
-        - _target_: training.dataset.vos_dataset.VOSDataset
-          training: true
-          video_dataset:
-            _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
-            img_folder: ${dataset.img_folder}
-            gt_folder: ${dataset.gt_folder}
-            file_list_txt: ${dataset.file_list_txt}
-          sampler:
-                _target_: training.dataset.vos_sampler.RandomUniformSampler
-                num_frames: ${scratch.num_frames}
-                max_num_objects: ${scratch.max_num_objects}
-          transforms: ${vos.train_transforms}
-          multiplier: ${dataset.multiplier}
+        - _target_: training.dataset.utils.RepeatFactorWrapper
+          dataset:
+            _target_: training.dataset.utils.ConcatDataset
+            datasets:
+            - _target_: training.dataset.vos_dataset.VOSDataset
+              training: true
+              video_dataset:
+                _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
+                img_folder: data/OBIMD_align/rubbing
+                gt_folder: data/OBIMD_align/facsimile_json
+                file_list_txt: data/OBIMD_align/train.txt
+              sampler:
+                    _target_: training.dataset.vos_sampler.RandomUniformSampler
+                    num_frames: ${scratch.num_frames}
+                    max_num_objects: ${scratch.max_num_objects}
+              transforms: ${vos.train_transforms}
+              multiplier: 1
+            - _target_: training.dataset.vos_dataset.VOSDataset
+              training: true
+              video_dataset:
+                _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
+                img_folder: data/OBIMD_HJ_diff/rubbings
+                gt_folder: data/OBIMD_HJ_diff/fascimile_json_round2_train
+                file_list_txt: data/OBIMD_HJ_diff/train_round2.txt
+              sampler:
+                    _target_: training.dataset.vos_sampler.RandomUniformSampler
+                    num_frames: ${scratch.num_frames}
+                    max_num_objects: ${scratch.max_num_objects}
+              transforms: ${vos.train_transforms}
+              multiplier: 1
       shuffle: True
       num_workers: ${scratch.num_train_workers}
       pin_memory: True
@@ -304,7 +321,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 10 # 0 only last checkpoint is saved.
+    save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
@@ -314,7 +331,7 @@ trainer:
 
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        checkpoint_path: checkpoints/sam2.1_hiera_large.pt # PATH to SAM 2.1 checkpoint
+        checkpoint_path: sam2_logs/configs/sam2.1_training/sam_flywheel_round1/checkpoints/checkpoint_1.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:

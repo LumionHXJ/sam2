@@ -51,7 +51,7 @@ class VOSDataset(VisionDataset):
     def _get_datapoint(self, idx):
 
         for retry in range(MAX_RETRIES):
-            try:
+            # try:
                 if isinstance(idx, torch.Tensor):
                     idx = idx.item()
                 # sample a video
@@ -61,15 +61,15 @@ class VOSDataset(VisionDataset):
                     video, segment_loader, epoch=self.curr_epoch
                 )
                 break  # Succesfully loaded video
-            except Exception as e:
-                if self.training:
-                    logging.warning(
-                        f"Loading failed (id={idx}); Retry {retry} with exception: {e}"
-                    )
-                    idx = random.randrange(0, len(self.video_dataset))
-                else:
-                    # Shouldn't fail to load a val video
-                    raise e
+            # except Exception as e:
+            #     if self.training:
+            #         logging.warning(
+            #             f"Loading failed (id={idx}); Retry {retry} with exception: {e}"
+            #         )
+            #         idx = random.randrange(0, len(self.video_dataset))
+            #     else:
+            #         # Shouldn't fail to load a val video
+            #         raise e
 
         datapoint = self.construct(video, sampled_frms_and_objs, segment_loader)
         for transform in self._transforms:
