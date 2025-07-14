@@ -12,7 +12,7 @@ IMAGE_ROOT = 'data/OBIMD_align/rubbing'
 OUTPUT_DIR = 'data/OBIMD_align/facsimile_json'
 SEGMAP_ROOT = 'data/OBIMD_align/facsimile'
 EXPAND = 0.1
-GLOBAL_BOX_PROMPT = True
+GLOBAL_BOX_PROMPT = False
 
 with open(LABEL_JSON) as f:
     datas = json.load(f)

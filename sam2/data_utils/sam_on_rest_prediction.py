@@ -1,3 +1,6 @@
+# 数据飞轮阶段间，使用当前最佳的模型，尝试修改之前的打标结果（如果置信度更高)
+# TOFIX: 目前没有支持用置信度高的替换低的
+
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import cv2

@@ -1,3 +1,5 @@
+# 自监督飞轮阶段，使用yolov12的检测结果作为box prompt，进行打标
+
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 import cv2

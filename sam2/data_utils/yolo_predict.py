@@ -1,3 +1,5 @@
+# 进行目标检测
+
 from ultralytics import YOLO
 import time
 from tqdm import tqdm
