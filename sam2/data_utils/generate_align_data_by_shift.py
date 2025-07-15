@@ -34,17 +34,18 @@ def optimize_label_with_shifts(rubbing, facsimile, bbox, max_shift=10):
     return refine_facsimile, best_iou
 
 def generate_align_data_by_shift(
+    train_list,
     rubbing_dir,
     sa1b_json_dir, # 第一步中，需要使用没有边线的数据，这样预测才能够得到没有去线的版本
     output_dir
 ):
     for file in tqdm(
-        sorted(os.listdir(sa1b_json_dir))
+        sorted(train_list)
     ):
         os.makedirs(output_dir, exist_ok=True)
 
-        rubbing_path = os.path.join(rubbing_dir, file.replace('.json', '.jpg'))
-        annotation_path = os.path.join(sa1b_json_dir, file)
+        rubbing_path = os.path.join(rubbing_dir, file+'.jpg')
+        annotation_path = os.path.join(sa1b_json_dir, file+'.json')
 
         if not os.path.exists(rubbing_path):
             raise
@@ -69,15 +70,18 @@ def generate_align_data_by_shift(
                 'predicted_iou': float(best_iou),
             })                
 
-        output_file = os.path.join(output_dir, file)
+        output_file = os.path.join(output_dir, file+'.json')
 
         with open(output_file, 'w') as f:
             json.dump(align_annotation, f, ensure_ascii=False, indent=2)
 
 
 if __name__ == "__main__":
+    with open("data/OBIMD_raw_hj/train.txt") as f:
+        train_list = [l.strip() for l in f.readlines()]
     generate_align_data_by_shift(
+        train_list=train_list,
         rubbing_dir='data/OBIMD_raw_hj/rubbing',
         sa1b_json_dir='data/OBIMD_raw_hj/facsimile_json_no_border',
-        output_dir='data/OBIMD_raw_hj/facsimile_json_no_border_shifted'
+        output_dir='data/OBIMD_stage1/facsimile_json_new'
     )
