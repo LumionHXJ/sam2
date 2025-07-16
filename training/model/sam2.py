@@ -234,6 +234,7 @@ class SAM2Train(SAM2Base):
                 if use_box_input:
                     points, labels = sample_box_points(
                         gt_masks_per_frame[t],
+                        gt_boxes_per_frame[t]
                     )
                 else:
                     # (here we only sample **one initial point** on initial conditioning frames from the

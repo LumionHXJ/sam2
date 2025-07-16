@@ -155,6 +155,7 @@ class LayerNorm2d(nn.Module):
 
 def sample_box_points(
     masks: torch.Tensor,
+    boxes: torch.Tensor = None,
     noise: float = 0.1,  # SAM default
     noise_bound: int = 20,  # SAM default
     top_left_label: int = 2,
@@ -173,7 +174,10 @@ def sample_box_points(
     - box_labels: [B, num_pt], label 2 is reserverd for top left and 3 for bottom right corners, dtype=torch.int32
     """
     device = masks.device
-    box_coords = mask_to_box(masks)
+    if boxes is not None:
+        box_coords = boxes.to(device)
+    else:
+        box_coords = mask_to_box(masks)
     B, _, H, W = masks.shape
     box_labels = torch.tensor(
         [top_left_label, bottom_right_label], dtype=torch.int, device=device

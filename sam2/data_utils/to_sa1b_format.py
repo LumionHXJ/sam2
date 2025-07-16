@@ -6,21 +6,22 @@ import os
 from PIL import Image
 from pycocotools import mask as maskUtils
 from tqdm import tqdm
+from sam2.data_utils.utils import load_raw_annotations
 
-LABEL_JSON = 'data/OBIMD_align/label.json'
-IMAGE_ROOT = 'data/OBIMD_align/rubbing'
-OUTPUT_DIR = 'data/OBIMD_align/facsimile_json'
-SEGMAP_ROOT = 'data/OBIMD_align/facsimile'
+LABEL_JSON = 'data/OBIMD_raw_hj/label_filtered.json'
+IMAGE_ROOT = 'data/OBIMD_raw_hj/rubbing'
+OUTPUT_DIR = 'data/OBIMD_raw_hj/facsimile_json_filtered'
+SEGMAP_ROOT = 'data/OBIMD_raw_hj/facsimile_no_border'
 EXPAND = 0.1
-GLOBAL_BOX_PROMPT = False
 
 with open(LABEL_JSON) as f:
     datas = json.load(f)
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 char_id = 0
+raw_data_lookup = load_raw_annotations('data/OBIMD_raw_hj/label.json', SEGMAP_ROOT) # 使用包含空框的版本，进行expand之后的抑制
 for image_id, data in tqdm(enumerate(datas)):
     image_name = os.path.basename(data['Rubbing'])
-    facsimile = cv2.imread(os.path.join(SEGMAP_ROOT, image_name.replace('jpg', 'png')), flags=cv2.IMREAD_GRAYSCALE)
+    facsimile = cv2.imread(os.path.join(SEGMAP_ROOT, image_name), flags=cv2.IMREAD_GRAYSCALE)
     if facsimile is None:
         continue
     # CHECK SHAPE etc.
@@ -44,8 +45,8 @@ for image_id, data in tqdm(enumerate(datas)):
         w = int(w + 2 * EXPAND * w)
         h = int(h + 2 * EXPAND * h)
         mask[y:min(y+h, H), x:min(x+w, W)] = facsimile[y:min(y+h, H), x:min(x+w, W)] # TOFIX: check area?
-        for _char in oracle_chars:
-            if char == _char:
+        for _char in raw_data_lookup[image_name.split('.')[0]]:
+            if char['Position'] == _char['Position']:
                 continue
             _x, _y, _w, _h = list(map(int, _char['Position'].split(',')))
             mask[_y:min(_y+_h, H), _x:min(_x+_w, W)] = 0 # remove other chars
@@ -55,15 +56,6 @@ for image_id, data in tqdm(enumerate(datas)):
         area = maskUtils.area(rle)
         bbox = maskUtils.toBbox(rle)
         annotations.append(dict(id=char_id, bbox=bbox.astype(int).tolist(), area=int(area), segmentation=rle))
-        char_id += 1
-    if GLOBAL_BOX_PROMPT:
-        # 加入一个全局的背景prompt，为了不和中心区域冲突需要取反
-        mask = np.asfortranarray(255 - facsimile)
-        rle = maskUtils.encode(mask)
-        rle['counts'] = rle['counts'].decode('utf-8')
-        area = maskUtils.area(rle)
-        bbox = [0, 0, W, H]
-        annotations.append(dict(id=char_id, bbox=bbox, area=int(area), segmentation=rle))
         char_id += 1
     with open(os.path.join(OUTPUT_DIR, f'{image_name.split(".")[0]}.json'), 'w') as f:
         json.dump(dict(image_info=image_info, annotations=annotations), f, indent=2)

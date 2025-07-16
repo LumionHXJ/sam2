@@ -82,6 +82,6 @@ if __name__ == "__main__":
     generate_align_data_by_shift(
         train_list=train_list,
         rubbing_dir='data/OBIMD_raw_hj/rubbing',
-        sa1b_json_dir='data/OBIMD_raw_hj/facsimile_json_no_border',
+        sa1b_json_dir='data/OBIMD_raw_hj/facsimile_json',
         output_dir='data/OBIMD_stage1/facsimile_json_new'
     )
