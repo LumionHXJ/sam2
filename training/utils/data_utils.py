@@ -47,7 +47,6 @@ class BatchedVideoDatapoint:
     img_batch: torch.FloatTensor
     obj_to_frame_idx: torch.IntTensor
     masks: torch.BoolTensor
-    boxes: torch.Tensor
     metadata: BatchedVideoMetaData
 
     dict_key: str
@@ -95,7 +94,6 @@ class Object:
     # Index of the frame in the media (0 if single image)
     frame_index: int
     segment: Union[torch.Tensor, dict]  # RLE dict or binary mask
-    box: torch.Tensor # bounding box in format [x1, y1, x2, y2]
 
 
 @dataclass
@@ -133,7 +131,6 @@ def collate_fn(
     step_t_frame_orig_size = [[] for _ in range(T)]
 
     step_t_masks = [[] for _ in range(T)]
-    step_t_boxes = [[] for _ in range(T)]
     step_t_obj_to_frame_idx = [
         [] for _ in range(T)
     ]  # List to store frame indices for each time step
@@ -150,7 +147,6 @@ def collate_fn(
                     torch.tensor([t, video_idx], dtype=torch.int)
                 )
                 step_t_masks[t].append(obj.segment.to(torch.bool))
-                step_t_boxes[t].append(obj.box)
                 step_t_objects_identifier[t].append(
                     torch.tensor([orig_video_id, orig_obj_id, orig_frame_idx])
                 )
@@ -164,7 +160,6 @@ def collate_fn(
         dim=0,
     )
     masks = torch.stack([torch.stack(masks, dim=0) for masks in step_t_masks], dim=0)
-    boxes = torch.stack([torch.stack(boxes, dim=0) for boxes in step_t_boxes], dim=0)
     objects_identifier = torch.stack(
         [torch.stack(id, dim=0) for id in step_t_objects_identifier], dim=0
     )
@@ -175,7 +170,6 @@ def collate_fn(
         img_batch=img_batch,
         obj_to_frame_idx=obj_to_frame_idx,
         masks=masks,
-        boxes=boxes,
         metadata=BatchedVideoMetaData(
             unique_objects_identifier=objects_identifier,
             frame_orig_size=frame_orig_size,

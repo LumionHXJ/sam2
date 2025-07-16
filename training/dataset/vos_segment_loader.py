@@ -235,21 +235,19 @@ class LazySegments:
 
     def __init__(self):
         self.segments = {}
-        self.boxes = {}
         self.cache = {}
 
     def __setitem__(self, key, item):
-        segment, box = item
+        segment = item
         self.segments[key] = segment
-        self.boxes[key] = torch.tensor(box) # (4, )
 
     def __getitem__(self, key):
         if key in self.cache:
-            return self.cache[key], self.boxes[key]
+            return self.cache[key] 
         rle = self.segments[key]
         mask = torch.from_numpy(mask_utils.decode([rle])).permute(2, 0, 1)[0]
         self.cache[key] = mask
-        return mask, self.boxes[key]
+        return mask
 
     def __contains__(self, key):
         return key in self.segments
@@ -280,7 +278,6 @@ class SA1BSegmentLoader:
         self.frame_annots = self.frame_annots["annotations"]
 
         rle_masks = []
-        boxes = []
         for frame_annot in self.frame_annots:
             if not frame_annot["area"] > 0:
                 continue
@@ -295,11 +292,10 @@ class SA1BSegmentLoader:
             ):
                 continue
             rle_masks.append(frame_annot["segmentation"])
-            boxes.append(frame_annot['bbox'])
 
         self.segments = LazySegments()
-        for i, (rle, box) in enumerate(zip(rle_masks, boxes)):
-            self.segments[i] = (rle, box)
+        for i, rle in enumerate(rle_masks):
+            self.segments[i] = rle
 
     def load(self, frame_idx):
         return self.segments

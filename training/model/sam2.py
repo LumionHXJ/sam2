@@ -158,10 +158,6 @@ class SAM2Train(SAM2Base):
             stage_id: masks.unsqueeze(1)  # [B, 1, H_im, W_im]
             for stage_id, masks in enumerate(input.masks)
         }
-        gt_boxes_per_frame = {
-            stage_id: boxes.unsqueeze(1)  # [B, 1, 4]
-            for stage_id, boxes in enumerate(input.boxes)
-        }
         # gt_masks_per_frame = input.masks.unsqueeze(2) # [T,B,1,H_im,W_im] keep everything in tensor form
         backbone_out["gt_masks_per_frame"] = gt_masks_per_frame
         num_frames = input.num_frames
@@ -226,15 +222,20 @@ class SAM2Train(SAM2Base):
         backbone_out["mask_inputs_per_frame"] = {}  # {frame_idx: <input_masks>}
         backbone_out["point_inputs_per_frame"] = {}  # {frame_idx: <input_points>}
         for t in init_cond_frames:
-            if not use_pt_input:
+            if not use_pt_input: # for misalign correction
                 backbone_out["mask_inputs_per_frame"][t] = gt_masks_per_frame[t]
+                # sample box input for second frame
+                points, labels = sample_box_points(
+                    gt_masks_per_frame[1],
+                 )
+                point_inputs = {"point_coords": points, "point_labels": labels}
+                backbone_out["point_inputs_per_frame"][1] = point_inputs
             else:
                 # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
                 use_box_input = self.rng.random() < prob_to_use_box_input
                 if use_box_input:
                     points, labels = sample_box_points(
                         gt_masks_per_frame[t],
-                        gt_boxes_per_frame[t]
                     )
                 else:
                     # (here we only sample **one initial point** on initial conditioning frames from the

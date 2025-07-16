@@ -85,7 +85,6 @@ class VOSDataset(VisionDataset):
 
         images = []
         rgb_images = load_images(sampled_frames)
-        # Iterate over the sampled frames and store their rgb data and object data (bbox, segment)
         for frame_idx, frame in enumerate(sampled_frames):
             w, h = rgb_images[frame_idx].size
             images.append(
@@ -108,21 +107,19 @@ class VOSDataset(VisionDataset):
                         segments[obj_id] is not None
                     ), "None targets are not supported"
                     # segment is uint8 and remains uint8 throughout the transforms
-                    segment, box = segments[obj_id]
+                    segment = segments[obj_id]
                     segment = segment.to(dtype=torch.uint8)
                 else:
                     # There is no target, we either use a zero mask target or drop this object
                     if not self.always_target:
                         continue
                     segment = torch.zeros(h, w, dtype=torch.uint8)
-                    box = torch.tensor([0, 0, w, h], dtype=torch.float32)
 
                 images[frame_idx].objects.append(
                     Object(
                         object_id=obj_id,
                         frame_index=frame.frame_idx,
                         segment=segment,
-                        box=box
                     )
                 )
         return VideoDatapoint(

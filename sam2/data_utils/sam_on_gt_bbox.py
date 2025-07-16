@@ -25,7 +25,7 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         train_list = [line.strip() for line in f.readlines()]
 
     # load raw data
-    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label.json", "data/OBIMD_raw_hj/facsimile", ignore_null=True)
+    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label_filtered.json", "data/OBIMD_raw_hj/facsimile", ignore_null=True)
 
     for image_id, path in tqdm(enumerate(train_list)):
         image = cv2.imread(os.path.join('data/OBIMD_stage2/rubbing', path+'.jpg'))
