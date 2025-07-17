@@ -4,6 +4,20 @@ from tqdm import tqdm
 import os
 import cv2
 
+def calculate_stability_score(
+    masks, mask_threshold: float = 0, threshold_offset: float = 1
+):
+    masks = masks.reshape(masks.shape[0], -1)
+    intersections = (
+        (masks > (mask_threshold + threshold_offset))
+        .sum(-1)
+    )
+    unions = (
+        (masks > (mask_threshold - threshold_offset))
+        .sum(-1)
+    )
+    return intersections / unions
+
 def calc_box_iou(box1, box2):
     x1, y1, w1, h1 = box1
     x2, y2, w2, h2 = box2

@@ -4,19 +4,19 @@ import cv2
 import numpy as np
 import json
 import os
-from matplotlib import pyplot as plt
 import random
+from sam2.data_utils.utils import calculate_stability_score
 
-sam2_checkpoint = "sam2/sam2_logs/configs/sam2.1_training/sam_flywheel_round2/checkpoints/checkpoint_1.pt"
+sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage2.yaml/checkpoints/checkpoint.pt"
 model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
 
 sam2_model = build_sam2(model_cfg, sam2_checkpoint, device='cuda:1')
 predictor = SAM2ImagePredictor(sam2_model)
 
-rubbing_dir = "data/OBIMD_raw/rubbing"
-facsimile_dir = "data/OBIMD_raw/facsimile"
-json_dir = "data/OBIMD_raw/facsimile_json" # load gt bbox
-vis_dir = "sam2/sam2_logs/configs/sam2.1_training/sam_flywheel_round2/visualization" # save in ckpt dir
+rubbing_dir = "data/OBIMD_raw_hj/rubbing"
+facsimile_dir = "data/OBIMD_raw_hj/facsimile"
+json_dir = "data/OBIMD_raw_hj/facsimile_json" # load gt bbox
+vis_dir = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage2.yaml/visualization" # save in ckpt dir
 
 random.seed(42)
 file_list = random.sample(os.listdir(rubbing_dir), 100) # 对齐
@@ -37,11 +37,21 @@ for img_path in sorted(file_list):
         point_labels=None,
         box=input_box[None, :],
         multimask_output=False,
+        return_logits=True
     )
-    masks = masks.any(axis=0)[0].astype(np.uint8) * 255 # H, W?
-    for box in input_box:
+    stability_scores = calculate_stability_score(masks)
+    masks = (masks > 0).any(axis=0)[0].astype(np.uint8) * 255 # H, W?
+    for box, score, stab in zip(input_box, scores, stability_scores):
         x0, y0, x1, y1 = box
         image = cv2.rectangle(image, (int(x0), int(y0)), (int(x1), int(y1)), (0, 255, 0), 2)
+        iou_text = f"IoU: {float(score):.2f}"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        font_thickness = 1
+        text_size = cv2.getTextSize(iou_text, font, font_scale, font_thickness)[0]
+        text_x = int(x0 + ((x1-x0) - text_size[0]) / 2)
+        text_y = int(y0 - 5)  # Position above the box
+        cv2.putText(image, iou_text, (text_x, text_y), font, font_scale, (0, 255, 0), font_thickness)
     os.makedirs(vis_dir, exist_ok=True)
     output_path = os.path.join(vis_dir, img_path)
     # Apply a colormap to the facsimile for better visualization

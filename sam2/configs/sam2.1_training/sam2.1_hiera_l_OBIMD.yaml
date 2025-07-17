@@ -181,9 +181,9 @@ trainer:
 
     ####### Training specific params #######
     # box/point input and corrections
-    prob_to_use_pt_input_for_train: 0.5 # 图像默认1.0（这一项留给视频用）
+    prob_to_use_pt_input_for_train: 0.0 # 图像默认1.0（这一项留给视频用）
     prob_to_use_pt_input_for_eval: 0.0
-    prob_to_use_box_input_for_train: 0.5  # 0.5*0.5 = 0.25 prob to use box instead of points
+    prob_to_use_box_input_for_train: 0.75  # 0.5*0.5 = 0.25 prob to use box instead of points
     prob_to_use_box_input_for_eval: 0.0
     prob_to_sample_from_gt_for_train: 0.1  # with a small prob, sampling correction points from GT mask instead of prediction errors
     num_frames_to_correct_for_train: 2  # iteratively sample on random 1~2 frames (always include the first frame)
@@ -191,9 +191,9 @@ trainer:
     rand_frames_to_correct_for_train: True  # random #init-cond-frame ~ 2
     add_all_frames_to_correct_as_cond: True  # when a frame receives a correction click, it becomes a conditioning frame (even if it's not initially a conditioning frame)
     # maximum 2 initial conditioning frames
-    num_init_cond_frames_for_train: 2
-    rand_init_cond_frames_for_train: True  # random 1~2
-    num_correction_pt_per_frame: 7
+    num_init_cond_frames_for_train: 1 # first frame give misalign mask, second one input box / points
+    rand_init_cond_frames_for_train: False  # random 1~2
+    num_correction_pt_per_frame: 3
     use_act_ckpt_iterative_pt_sampling: false
     
     num_init_cond_frames_for_eval: 1  # only mask on the first frame

@@ -11,6 +11,7 @@ import os
 from pycocotools import mask as maskUtils
 import torch
 import shutil
+from sam2.data_utils.utils import calculate_stability_score
 
 # checkpoint from last round
 sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam_flywheel_round1/checkpoints/checkpoint_1.pt"
@@ -32,9 +33,6 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             pred_result = json.load(f)
         input_box = []
         for ann in pred_result['annotations']:
-            # if annotations is well predicted
-            if ann['predicted_iou'] >= iou_threshold_last_round:
-                continue
             input_box.append(ann['crop_box'])
         if len(input_box) == 0:
             shutil.copy(os.path.join(last_round_data, file), os.path.join(output_dir, file))
@@ -50,31 +48,33 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             point_coords=None,
             point_labels=None,
             box=input_box[None, :],
-            multimask_output=False
+            multimask_output=False,
+            return_logits=True
         )
         
-        masks = (masks * 255).astype(np.uint8)
+        stability_scores = calculate_stability_score(masks)
+        masks = (masks > 0).astype(np.uint8) * 255
         if masks.shape[0] == 1:
             masks = masks[None, ...]
 
         correct_result = dict(image_info=pred_result['image_info'], annotations=[])
-        process_count = 0
-        for ann in pred_result['annotations']:
-            if ann['predicted_iou'] >= iou_threshold_last_round:
+        for ann, mask, score, stab_score in zip(pred_result['annotations'], masks, scores, stability_scores):
+            if ann['predicted_iou'] >= score:
+                # 之前的结果置信度更高
                 correct_result['annotations'].append(ann)
                 continue
-            mask = np.asfortranarray(masks[process_count, 0])
+            mask = np.asfortranarray(mask)
             rle = maskUtils.encode(mask)
             rle['counts'] = rle['counts'].decode('utf-8')
             area = maskUtils.area(rle)
             bbox = maskUtils.toBbox(rle)
-            ann.update({
+            ann.update({ # 例如crop box仍保留之前的值
                 'segmentation': rle,
                 'area': int(area),
                 'bbox': bbox.astype(int).tolist(),
-                'predicted_iou': float(scores[process_count]),
+                'predicted_iou': float(score),
+                'stability_score': float(stab_score),
             })
-            process_count += 1
             correct_result['annotations'].append(ann)
         with open(os.path.join(output_dir, file), 'w') as f:
             json.dump(correct_result, f, indent=2, ensure_ascii=False)

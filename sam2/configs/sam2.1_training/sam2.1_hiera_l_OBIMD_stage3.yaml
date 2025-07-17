@@ -2,20 +2,21 @@
 
 scratch:
   resolution: 1024
-  train_batch_size: 4
+  train_batch_size: 8
+  train_batch_size_video: 2
   num_train_workers: 10
   num_frames: 1
-  max_num_objects: 8
+  max_num_objects: 4
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
   phases_per_epoch: 1
-  num_epochs: 10
+  num_epochs: 5
 
 dataset:
   # PATHS to Dataset
-  img_folder: data/OBIMD_stage1/rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_stage1/facsimile_json_iou0.6 # PATH to MOSE Annotations folder
-  file_list_txt: data/OBIMD_stage1/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
+  img_folder: data/OBIMD_stage3/rubbing # PATH to MOSE JPEGImages folder
+  gt_folder: data/OBIMD_stage3/facsimile_json_iou0.8 # PATH to MOSE Annotations folder
+  file_list_txt: data/OBIMD_stage3/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 1
 
 # Video transforms
@@ -304,7 +305,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 0 # 0 only last checkpoint is saved.
+    save_freq: 5 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model

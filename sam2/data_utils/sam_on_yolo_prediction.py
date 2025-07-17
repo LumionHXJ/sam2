@@ -9,6 +9,7 @@ from tqdm import tqdm
 import os
 from pycocotools import mask as maskUtils
 import torch
+from sam2.data_utils.utils import calculate_stability_score
 
 sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_align.yaml/checkpoints/checkpoint.pt"
 model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
@@ -40,14 +41,17 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             point_coords=None,
             point_labels=None,
             box=input_box[None, :],
-            multimask_output=False
+            multimask_output=False,
+            return_logits=True
         )
-        masks = (masks * 255).astype(np.uint8)
+
+        stability_scores = calculate_stability_score(masks)
+        masks = (masks > 0).astype(np.uint8) * 255
         if masks.shape[0] == 1:
             masks = masks[None, ...]  # Ensure masks is a batch of masks
 
         pred_result = dict(image_info=dict(image_id=image_id, width=W, height=H, file_name=img_path), annotations=[])
-        for mask, score, box in zip(masks, scores, input_box):
+        for mask, score, box, stab_score in zip(masks, scores, input_box, stability_scores):
             mask = np.asfortranarray(mask[0])
             rle = maskUtils.encode(mask)
             rle['counts'] = rle['counts'].decode('utf-8')
@@ -55,8 +59,11 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             bbox = maskUtils.toBbox(rle)
             box[2:] = box[2:] - box[:2]  # Convert from [x0, y0, x1, y1] to [x, y, w, h]
             crop_box = box.tolist()
-            pred_result['annotations'].append(dict(id=char_id, bbox=bbox.astype(int).tolist(), area=int(area), segmentation=rle, 
-                                    predicted_iou=float(score), crop_box=crop_box))
+            pred_result['annotations'].append(dict(id=char_id, bbox=bbox.astype(int).tolist(), area=int(area), 
+                                                   segmentation=rle,
+                                                   predicted_iou=float(score), 
+                                                   stability_score=float(stab_score),
+                                                   crop_box=crop_box))
             char_id += 1
         with open(os.path.join('data/OBIMD_HJ_diff/fascimile_json_align', f'{img_path.split(".")[0]}.json'), 'w') as f:
             json.dump(pred_result, f, indent=2, ensure_ascii=False)

@@ -1,7 +1,7 @@
 # 自监督飞轮阶段，使用yolov12的检测结果作为box prompt，进行打标
 
-from sam2.build_sam import build_sam2
-from sam2.sam2_image_predictor import SAM2ImagePredictor
+from sam2.build_sam import build_sam2_video_predictor
+
 import cv2
 import numpy as np
 import json
@@ -11,26 +11,25 @@ from pycocotools import mask as maskUtils
 import torch
 from sam2.data_utils.utils import load_raw_annotations, calculate_stability_score
 
-sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage2.yaml/checkpoints/checkpoint.pt"
+sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage1.yaml/checkpoints/checkpoint_10.pt"
 model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
 mask_threshold = 0
 stability_score_offset = 1.0 
-sam2_model = build_sam2(model_cfg, sam2_checkpoint, device='cuda')
+predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint, device='cuda')
 
 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
-    predictor = SAM2ImagePredictor(sam2_model)
-    char_id = 0 # TOFIX: 暂时没有断点
+    char_id = 0
     # load train_list
     with open("data/OBIMD_raw_hj/train.txt") as f:
         train_list = [line.strip() for line in f.readlines()]
 
     # load raw data
-    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label_filtered.json", "data/OBIMD_raw_hj/facsimile", ignore_null=True)
+    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label_filtered.json", "data/OBIMD_raw_hj/facsimile", ignore_null=True) # WARNING
 
     for image_id, path in tqdm(enumerate(train_list)):
-        image = cv2.imread(os.path.join('data/OBIMD_stage3/rubbing', path+'.jpg'))
+        image = cv2.imread(os.path.join('data/OBIMD_stage2/rubbing', path+'.jpg'))
         H, W, C = image.shape
-        if os.path.exists(os.path.join('data/OBIMD_stage3/facsimile_json', path+'.json')):
+        if os.path.exists(os.path.join('data/OBIMD_stage2/rubbing/facsimile_json', path+'.json')):
             continue
         input_box = []
         for char in data_lookup[path]:
@@ -43,7 +42,7 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
             point_labels=None,
             box=input_box[None, :],
             multimask_output=False,
-            return_logits=True
+            return_logits=train_list
         )
         stability_scores = calculate_stability_score(masks)
         masks = (masks > 0).astype(np.uint8) * 255
@@ -65,5 +64,5 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
                                                    stability_score=float(stab_score),
                                                    crop_box=crop_box))
             char_id += 1
-        with open(os.path.join('data/OBIMD_stage3/facsimile_json', path+'.json'), 'w') as f:
+        with open(os.path.join('data/OBIMD_stage2/facsimile_json', path+'.json'), 'w') as f:
             json.dump(pred_result, f, indent=2, ensure_ascii=False)

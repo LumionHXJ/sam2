@@ -2,11 +2,11 @@
 
 scratch:
   resolution: 1024
-  train_batch_size: 4
+  train_batch_size: 8
   train_batch_size_video: 2
   num_train_workers: 10
-  num_frames: 2
-  max_num_objects: 8
+  num_frames: 1
+  max_num_objects: 4
   base_lr: 5.0e-6
   vision_lr: 3.0e-06
   phases_per_epoch: 1
