@@ -265,7 +265,7 @@ class SAM2VideoPredictor(SAM2Base):
             output_dict=obj_output_dict,  # run on the slice of a single object
             frame_idx=frame_idx,
             batch_size=1,  # run on the slice of a single object
-            is_init_cond_frame=is_init_cond_frame,
+            is_init_cond_frame=False, # second frame (frame-to-align) is not cond frame: using mem enc
             point_inputs=point_inputs,
             mask_inputs=None,
             reverse=reverse,
@@ -362,10 +362,10 @@ class SAM2VideoPredictor(SAM2Base):
             # at the beginning of `propagate_in_video` (after user finalize their clicks). This
             # allows us to enforce non-overlapping constraints on all objects before encoding
             # them into memory.
-            run_mem_encoder=False,
+            run_mem_encoder=True,
         )
         # Add the output to the output dict (to be used as future memory)
-        obj_temp_output_dict[storage_key][frame_idx] = current_out
+        obj_output_dict[storage_key][frame_idx] = current_out
 
         # Resize the output mask to the original video resolution
         obj_ids = inference_state["obj_ids"]

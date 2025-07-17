@@ -272,7 +272,7 @@ class SAM2Base(torch.nn.Module):
              absolute pixel-unit coordinate in (x, y) format of the P input points
           2) "point_labels" has shape [B, P] and int32 dtype, where 1 means
              positive clicks, 0 means negative clicks, and -1 means padding
-        - mask_inputs: a mask of [B, 1, H*16, W*16] shape, float or bool, with the
+        - mask_inputs: a mask of [B, 1, H*4, W*4] shape, float or bool, with the
           same spatial size as the image.
         - high_res_features: either 1) None or 2) or a list of length 2 containing
           two feature maps of [B, C, 4*H, 4*W] and [B, C, 2*H, 2*W] shapes respectively,
