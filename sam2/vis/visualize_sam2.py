@@ -7,16 +7,16 @@ import os
 import random
 from sam2.data_utils.utils import calculate_stability_score
 
-sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage2.yaml/checkpoints/checkpoint.pt"
+sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage1_concat.yaml/checkpoints/checkpoint.pt"
 model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
 
 sam2_model = build_sam2(model_cfg, sam2_checkpoint, device='cuda:1')
 predictor = SAM2ImagePredictor(sam2_model)
 
-rubbing_dir = "data/OBIMD_raw_hj/rubbing"
+rubbing_dir = "data/OBIMD_raw_hj/rubbing_concat"
 facsimile_dir = "data/OBIMD_raw_hj/facsimile"
 json_dir = "data/OBIMD_raw_hj/facsimile_json" # load gt bbox
-vis_dir = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage2.yaml/visualization" # save in ckpt dir
+vis_dir = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage1_concat.yaml/visualization" # save in ckpt dir
 
 random.seed(42)
 file_list = random.sample(os.listdir(rubbing_dir), 100) # 对齐
@@ -56,6 +56,7 @@ for img_path in sorted(file_list):
     output_path = os.path.join(vis_dir, img_path)
     # Apply a colormap to the facsimile for better visualization
     colored_facsimile = cv2.applyColorMap(masks, cv2.COLORMAP_JET)
-    overlay = cv2.addWeighted(image, 0.5, colored_facsimile, 0.5, 0)
-    combined = np.hstack((overlay, facsimile))
+    # overlay = cv2.addWeighted(image, 0.5, colored_facsimile, 0.5, 0)
+    facsimile = cv2.addWeighted(facsimile, 0.5, colored_facsimile, 0.5, 0)
+    combined = np.hstack((colored_facsimile, facsimile))
     cv2.imwrite(output_path, combined)

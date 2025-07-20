@@ -421,9 +421,9 @@ class SAM2Base(torch.nn.Module):
         out_scale, out_bias = 20.0, -10.0  # sigmoid(-10.0)=4.5398e-05
         mask_inputs_float = mask_inputs.float()
         high_res_masks = mask_inputs_float * out_scale + out_bias # 这一步直接转化为soft logits，和通常情况decoder输出对齐
-        low_res_masks = F.interpolate(
+        low_res_masks = F.interpolate( # now the same
             high_res_masks,
-            size=(high_res_masks.size(-2) // 4, high_res_masks.size(-1) // 4),
+            size=(high_res_masks.size(-2), high_res_masks.size(-1)),
             align_corners=False,
             mode="bilinear",
             antialias=True,  # use antialias for downsampling
@@ -849,7 +849,7 @@ class SAM2Base(torch.nn.Module):
         (
             _,
             _,
-            _,
+            ious,
             low_res_masks,
             high_res_masks,
             obj_ptr,
@@ -859,6 +859,7 @@ class SAM2Base(torch.nn.Module):
         current_out["pred_masks"] = low_res_masks
         current_out["pred_masks_high_res"] = high_res_masks
         current_out["obj_ptr"] = obj_ptr
+        current_out['ious'] = ious
         if not self.training:
             # Only add this in inference (to avoid unused param in activation checkpointing;
             # it's mainly used in the demo to encode spatial memories w/ consolidated masks)

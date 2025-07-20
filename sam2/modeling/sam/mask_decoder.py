@@ -82,6 +82,19 @@ class MaskDecoder(nn.Module):
                 transformer_dim, transformer_dim // 4, kernel_size=1, stride=1
             )
 
+        # upscale mask from 256 x 256 to 1024 x 1024
+        self.high_res_masks = nn.Sequential(
+            nn.ConvTranspose2d(
+                transformer_dim // 8, transformer_dim // 8, kernel_size=2, stride=2
+            ),
+            LayerNorm2d(transformer_dim // 8),
+            activation(),
+            nn.ConvTranspose2d(
+                transformer_dim // 8, transformer_dim // 8, kernel_size=2, stride=2
+            ),
+            activation(),
+        )
+
         self.output_hypernetworks_mlps = nn.ModuleList(
             [
                 MLP(transformer_dim, transformer_dim, transformer_dim // 8, 3)
@@ -223,6 +236,7 @@ class MaskDecoder(nn.Module):
             feat_s0, feat_s1 = high_res_features
             upscaled_embedding = act1(ln1(dc1(src) + feat_s1))
             upscaled_embedding = act2(dc2(upscaled_embedding) + feat_s0)
+        upscaled_embedding = self.high_res_masks(upscaled_embedding) # to 1024 x 1024
 
         hyper_in_list: List[torch.Tensor] = []
         for i in range(self.num_mask_tokens):

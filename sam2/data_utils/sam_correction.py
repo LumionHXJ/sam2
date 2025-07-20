@@ -11,12 +11,13 @@ from pycocotools import mask as maskUtils
 import torch
 from sam2.data_utils.utils import load_raw_annotations, calculate_stability_score
 
-sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage1.yaml/checkpoints/checkpoint_10.pt"
+sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam2.1_hiera_l_OBIMD_stage2_correction/checkpoints/checkpoint.pt"
 model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
+video_dir = 'data/OBIMD_stage3_correction/rubbing_sav'
 mask_threshold = 0
 stability_score_offset = 1.0 
 predictor = build_sam2_video_predictor(model_cfg, sam2_checkpoint, device='cuda')
-
+os.makedirs('data/OBIMD_stage3_correction/facsimile_json', exist_ok=True)
 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
     char_id = 0
     # load train_list
@@ -24,30 +25,41 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         train_list = [line.strip() for line in f.readlines()]
 
     # load raw data
-    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label_filtered.json", "data/OBIMD_raw_hj/facsimile", ignore_null=True) # WARNING
+    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label_filtered.json", "data/OBIMD_raw_hj/facsimile", ignore_null=True) # WARNING: NO null char
 
     for image_id, path in tqdm(enumerate(train_list)):
-        image = cv2.imread(os.path.join('data/OBIMD_stage2/rubbing', path+'.jpg'))
-        H, W, C = image.shape
-        if os.path.exists(os.path.join('data/OBIMD_stage2/rubbing/facsimile_json', path+'.json')):
+        facsimile = cv2.imread(os.path.join('data/OBIMD_stage3_correction/facsimile', path+'.jpg'), cv2.IMREAD_GRAYSCALE)
+        H, W = facsimile.shape
+        if os.path.exists(os.path.join('data/OBIMD_stage3_correction/facsimile_json', path+'.json')):
             continue
         input_box = []
         for char in data_lookup[path]:
             x, y, w, h = list(map(int, char['Position'].split(',')))
             input_box.append([x, y, x + w, y + h])
-        predictor.set_image(image)
+        inference_state = predictor.init_state(video_path=os.path.join(video_dir, path.split('.')[0]))
+        predictor.reset_state(inference_state)
         input_box = np.array(input_box).reshape(-1, 4)
-        masks, scores, _ = predictor.predict(
-            point_coords=None,
-            point_labels=None,
-            box=input_box[None, :],
-            multimask_output=False,
-            return_logits=train_list
-        )
-        stability_scores = calculate_stability_score(masks)
-        masks = (masks > 0).astype(np.uint8) * 255
-        if masks.shape[0] == 1:
-            masks = masks[None, ...]  # Ensure masks is a batch of masks
+        
+        for i in range(len(input_box)):
+            # Add misalign facs to first frame as mask
+            frame_idx, obj_ids, video_res_masks = predictor.add_new_mask(
+                inference_state=inference_state,
+                frame_idx=0,
+                obj_id=i,
+                mask=facsimile,
+            )
+        for i, box in enumerate(input_box):
+            # Add box to the second frame
+            _, _, out_mask_logits = predictor.add_new_points_or_box(
+                inference_state=inference_state,
+                frame_idx=1,
+                obj_id=i,
+                box= box[None, :],
+            )
+
+        stability_scores = calculate_stability_score(out_mask_logits)
+        masks = (out_mask_logits.cpu().numpy() > 0).astype(np.uint8) * 255
+        scores = [d['cond_frame_outputs'][1]['ious'].cpu()[0] for d in inference_state['temp_output_dict_per_obj'].values()]
 
         pred_result = dict(image_info=dict(image_id=image_id, width=W, height=H, file_name=path+'.jpg'), annotations=[])
         for mask, score, stab_score, box in zip(masks, scores, stability_scores, input_box):
@@ -64,5 +76,5 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
                                                    stability_score=float(stab_score),
                                                    crop_box=crop_box))
             char_id += 1
-        with open(os.path.join('data/OBIMD_stage2/facsimile_json', path+'.json'), 'w') as f:
+        with open(os.path.join('data/OBIMD_stage3_correction/facsimile_json', path+'.json'), 'w') as f:
             json.dump(pred_result, f, indent=2, ensure_ascii=False)

@@ -6,12 +6,12 @@ import os
 from pycocotools import mask as maskUtils
 from tqdm import tqdm
 
-SA1B_ROOT = 'data/OBIMD_stage1/facsimile_json_iou0.6'
-IMAGE_ROOT = 'data/OBIMD_stage1/rubbing'
-OUTPUT_DIR = 'data/OBIMD_stage1/facsimile_sav_iou0.6'
+SA1B_ROOT = 'data/OBIMD_stage2_correction/facsimile_json_iou0.65'
+IMAGE_ROOT = 'data/OBIMD_stage2_correction/rubbing'
+OUTPUT_DIR = 'data/OBIMD_stage2_correction/facsimile_sav_iou0.65'
 RAW_SEGMAP_ROOT = 'data/OBIMD_raw_hj/facsimile'
 
-with open('data/OBIMD_stage1/train.txt') as f:
+with open('data/OBIMD_stage2_correction/train.txt') as f:
     train_list = [line.strip().split('.')[0] for line in f.readlines()]
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 char_id = 0
