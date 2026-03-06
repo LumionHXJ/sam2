@@ -10,7 +10,7 @@ def calculate_iou(mask1, mask2):
     union = np.logical_or(mask1, mask2).sum()
     return intersection / union if union != 0 else 0.0
 
-def optimize_label_with_shifts(rubbing, facsimile, bbox, max_shift=10):
+def optimize_label_with_shifts(rubbing, facsimile, bbox, max_shift=0):
     """接受：完整的二值化拓片+字符部分+box"""
     x, y, w, h = bbox
     cropped_facs = facsimile[y:y+h, x:x+w]
@@ -43,16 +43,18 @@ def generate_align_data_by_shift(
         sorted(train_list)
     ):
         os.makedirs(output_dir, exist_ok=True)
+        if os.path.exists(os.path.join(output_dir, file+'.json')):
+            continue
 
         rubbing_path = os.path.join(rubbing_dir, file+'.jpg')
         annotation_path = os.path.join(sa1b_json_dir, file+'.json')
 
-        if not os.path.exists(rubbing_path):
-            raise
-
         rubbing = cv2.imread(rubbing_path, cv2.IMREAD_GRAYSCALE)
         _, binary_rubbing = cv2.threshold(rubbing, 127, 255, cv2.THRESH_BINARY)
 
+        if not os.path.exists(annotation_path):
+            print(f'{annotation_path} not exists')
+            continue
         with open(annotation_path, 'r') as f:
             annotation = json.load(f)
         align_annotation = dict(image_info=annotation['image_info'], annotations=[])
@@ -64,6 +66,8 @@ def generate_align_data_by_shift(
             area = maskUtils.area(rle)
             bbox = maskUtils.toBbox(rle)
             align_annotation['annotations'].append({
+                'id': ann['id'],
+                'crop_box': ann['crop_box'],
                 'segmentation': rle,
                 'area': int(area),
                 'bbox': bbox.astype(int).tolist(),
@@ -82,6 +86,6 @@ if __name__ == "__main__":
     generate_align_data_by_shift(
         train_list=train_list,
         rubbing_dir='data/OBIMD_raw_hj/rubbing',
-        sa1b_json_dir='data/OBIMD_raw_hj/facsimile_json',
-        output_dir='data/OBIMD_stage1/facsimile_json_new'
+        sa1b_json_dir='data/OBIMD_raw_hj/facsimile_json_filter',
+        output_dir='data/OBIMD_raw_hj/facsimile_json_coldstart'
     )

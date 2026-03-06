@@ -233,6 +233,57 @@ class SAM2ImagePredictor:
             all_low_res_masks.append(low_res_masks_np)
 
         return all_masks, all_ious, all_low_res_masks
+    
+    def batch_predict(
+        self, 
+        batchsize: int = 16,
+        point_coords: Optional[np.ndarray] = None,
+        point_labels: Optional[np.ndarray] = None,
+        box: Optional[np.ndarray] = None,
+        mask_input: Optional[np.ndarray] = None,
+        *args, **kwargs
+    ):
+        all_masks = []
+        all_scores = []
+        all_logits = []
+
+        N = len(box) if box is not None else len(point_coords)
+        
+        # 按批次处理
+        for i in range(0, N, batchsize):
+            # 获取当前批次的box (最后一批可能小于bsz)
+            batch_boxes = box[i:i+batchsize] if box is not None else None
+            batch_point_coords = point_coords[i:i+batchsize] if point_coords is not None else None
+            batch_point_labels = point_labels[i:i+batchsize] if point_labels is not None else None
+            batch_mask_input = mask_input[i:i+batchsize] if mask_input is not None else None            
+
+            masks, scores, logits = self.predict(
+                point_coords=batch_point_coords,
+                point_labels=batch_point_labels,
+                box=batch_boxes,
+                mask_input=batch_mask_input,
+                *args, **kwargs
+            )
+
+            if len(masks) == 1:
+                masks = masks[None]
+                scores = scores[None]
+                logits = logits[None]
+            
+            all_masks.append(masks)
+            all_scores.append(scores)
+            all_logits.append(logits)
+        
+        all_masks = np.concatenate(all_masks, axis=0)
+        all_scores = np.concatenate(all_scores, axis=0)
+        all_logits = np.concatenate(all_logits, axis=0)
+
+        if len(all_masks) == 1:
+            all_masks = all_masks[0]
+            all_scores = all_scores[0]
+            all_logits = all_logits[0]
+        
+        return all_masks, all_scores, all_logits
 
     def predict(
         self,

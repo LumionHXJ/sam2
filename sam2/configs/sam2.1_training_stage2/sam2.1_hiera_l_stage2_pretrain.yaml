@@ -2,21 +2,14 @@
 
 scratch:
   resolution: 1024
-  train_batch_size: 4
-  num_train_workers: 10
+  train_batch_size: 2
+  num_train_workers: 20
   num_frames: 1
-  max_num_objects: 8
-  base_lr: 5.0e-6
-  vision_lr: 3.0e-06
+  max_num_objects: 6
+  base_lr: 5.0e-5
+  vision_lr: 3.0e-05
   phases_per_epoch: 1
-  num_epochs: 1
-
-dataset:
-  # PATHS to Dataset
-  img_folder: data/OBIMD_global/rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_global/facsimile_json # PATH to MOSE Annotations folder
-  file_list_txt: data/OBIMD_global/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
-  multiplier: 1
+  num_epochs: 3 # real epoch = num_epochs * phases_per_epoch
 
 # Video transforms
 vos:
@@ -24,11 +17,6 @@ vos:
     - _target_: training.dataset.transforms.ComposeAPI
       transforms:
         - _target_: training.dataset.transforms.RandomHorizontalFlip
-          consistent_transform: True
-        - _target_: training.dataset.transforms.RandomAffine
-          degrees: 25
-          shear: 20
-          image_interpolation: bilinear
           consistent_transform: True
         - _target_: training.dataset.transforms.RandomResizeAPI
           sizes: ${scratch.resolution}
@@ -198,6 +186,8 @@ trainer:
     
     num_init_cond_frames_for_eval: 1  # only mask on the first frame
     forward_backbone_per_frame_for_eval: True
+    sam_mask_decoder_extra_args:
+      use_highres_output: true
     
 
   data:
@@ -207,36 +197,19 @@ trainer:
       batch_sizes:
         - ${scratch.train_batch_size}
       datasets:
-        - _target_: training.dataset.utils.RepeatFactorWrapper
-          dataset:
-            _target_: training.dataset.utils.ConcatDataset
-            datasets:
-            - _target_: training.dataset.vos_dataset.VOSDataset
-              training: true
-              video_dataset:
-                _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
-                img_folder: data/OBIMD_align/rubbing
-                gt_folder: data/OBIMD_align/facsimile_json
-                file_list_txt: data/OBIMD_align/train.txt
-              sampler:
-                    _target_: training.dataset.vos_sampler.RandomUniformSampler
-                    num_frames: ${scratch.num_frames}
-                    max_num_objects: ${scratch.max_num_objects}
-              transforms: ${vos.train_transforms}
-              multiplier: 1
-            - _target_: training.dataset.vos_dataset.VOSDataset
-              training: true
-              video_dataset:
-                _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
-                img_folder: data/OBIMD_HJ_diff/rubbings
-                gt_folder: data/OBIMD_HJ_diff/fascimile_json_round2_train
-                file_list_txt: data/OBIMD_HJ_diff/train_round2.txt
-              sampler:
-                    _target_: training.dataset.vos_sampler.RandomUniformSampler
-                    num_frames: ${scratch.num_frames}
-                    max_num_objects: ${scratch.max_num_objects}
-              transforms: ${vos.train_transforms}
-              multiplier: 1
+        - _target_: training.dataset.vos_dataset.VOSDataset
+          training: true
+          video_dataset:
+            _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
+            img_folder: data_YQWY/raw/rubbing
+            gt_folder: data_YQWY/obichariot/facsimile_json
+            file_list_txt: data_YQWY/obichariot/train.txt
+          sampler:
+                _target_: training.dataset.vos_sampler.RandomUniformSampler
+                num_frames: ${scratch.num_frames}
+                max_num_objects: ${scratch.max_num_objects}
+          transforms: ${vos.train_transforms}
+          multiplier: 1
       shuffle: True
       num_workers: ${scratch.num_train_workers}
       pin_memory: True
@@ -321,17 +294,17 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 1 # 0 only last checkpoint is saved.
+    save_freq: 3 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
-      strict: True
+      strict: False
       ignore_unexpected_keys: null
       ignore_missing_keys: null
 
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        checkpoint_path: sam2_logs/configs/sam2.1_training/sam_flywheel_round1/checkpoints/checkpoint_1.pt
+        checkpoint_path: checkpoints/sam2.1_hiera_large.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:

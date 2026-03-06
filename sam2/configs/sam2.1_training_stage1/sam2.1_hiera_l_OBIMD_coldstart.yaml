@@ -2,20 +2,20 @@
 
 scratch:
   resolution: 1024
-  train_batch_size: 4
-  num_train_workers: 10
+  train_batch_size: 2
+  num_train_workers: 20
   num_frames: 1
-  max_num_objects: 8
-  base_lr: 5.0e-6
-  vision_lr: 3.0e-06
+  max_num_objects: 4
+  base_lr: 5.0e-5
+  vision_lr: 3.0e-5
   phases_per_epoch: 1
   num_epochs: 10
 
 dataset:
   # PATHS to Dataset
-  img_folder: data/OBIMD_stage1/rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_stage1/facsimile_json_iou0.6 # PATH to MOSE Annotations folder
-  file_list_txt: data/OBIMD_stage1/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
+  img_folder: data/OBIMD_raw_hj/rubbing # PATH to MOSE JPEGImages folder
+  gt_folder: data/OBIMD_iou0.6/coldstart/facsimile_json # PATH to MOSE Annotations folder
+  file_list_txt: data/OBIMD_iou0.6/coldstart/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 1
 
 # Video transforms
@@ -24,11 +24,6 @@ vos:
     - _target_: training.dataset.transforms.ComposeAPI
       transforms:
         - _target_: training.dataset.transforms.RandomHorizontalFlip
-          consistent_transform: True
-        - _target_: training.dataset.transforms.RandomAffine
-          degrees: 25
-          shear: 20
-          image_interpolation: bilinear
           consistent_transform: True
         - _target_: training.dataset.transforms.RandomResizeAPI
           sizes: ${scratch.resolution}
@@ -198,6 +193,8 @@ trainer:
     
     num_init_cond_frames_for_eval: 1  # only mask on the first frame
     forward_backbone_per_frame_for_eval: True
+    sam_mask_decoder_extra_args:
+      use_highres_output: true
     
 
   data:
@@ -304,11 +301,11 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 0 # 0 only last checkpoint is saved.
+    save_freq: 5 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
-      strict: True
+      strict: False # ADD high res deconv
       ignore_unexpected_keys: null
       ignore_missing_keys: null
 

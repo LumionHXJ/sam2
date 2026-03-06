@@ -30,6 +30,7 @@ class MaskDecoder(nn.Module):
         pred_obj_scores: bool = False,
         pred_obj_scores_mlp: bool = False,
         use_multimask_token_for_obj_ptr: bool = False,
+        use_highres_output: bool = False,
     ) -> None:
         """
         Predicts masks given an image and prompt embeddings, using a
@@ -83,17 +84,19 @@ class MaskDecoder(nn.Module):
             )
 
         # upscale mask from 256 x 256 to 1024 x 1024
-        self.high_res_masks = nn.Sequential(
-            nn.ConvTranspose2d(
-                transformer_dim // 8, transformer_dim // 8, kernel_size=2, stride=2
-            ),
-            LayerNorm2d(transformer_dim // 8),
-            activation(),
-            nn.ConvTranspose2d(
-                transformer_dim // 8, transformer_dim // 8, kernel_size=2, stride=2
-            ),
-            activation(),
-        )
+        self.use_highres_output = use_highres_output
+        if use_highres_output:
+            self.high_res_masks = nn.Sequential(
+                nn.ConvTranspose2d(
+                    transformer_dim // 8, transformer_dim // 8, kernel_size=2, stride=2
+                ),
+                LayerNorm2d(transformer_dim // 8),
+                activation(),
+                nn.ConvTranspose2d(
+                    transformer_dim // 8, transformer_dim // 8, kernel_size=2, stride=2
+                ),
+                activation(),
+            )
 
         self.output_hypernetworks_mlps = nn.ModuleList(
             [
@@ -236,7 +239,9 @@ class MaskDecoder(nn.Module):
             feat_s0, feat_s1 = high_res_features
             upscaled_embedding = act1(ln1(dc1(src) + feat_s1))
             upscaled_embedding = act2(dc2(upscaled_embedding) + feat_s0)
-        upscaled_embedding = self.high_res_masks(upscaled_embedding) # to 1024 x 1024
+        
+        if self.use_highres_output:
+            upscaled_embedding = self.high_res_masks(upscaled_embedding) # to 1024 x 1024
 
         hyper_in_list: List[torch.Tensor] = []
         for i in range(self.num_mask_tokens):

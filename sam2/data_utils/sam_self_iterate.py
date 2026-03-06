@@ -47,15 +47,15 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
         masks, scores, _ = predictor.predict(
             point_coords=None,
             point_labels=None,
-            box=input_box[None, :],
+            box=input_box,
             multimask_output=False,
             return_logits=True
         )
         
-        stability_scores = calculate_stability_score(masks)
-        masks = (masks > 0).astype(np.uint8) * 255
         if masks.shape[0] == 1:
-            masks = masks[None, ...]
+            masks = masks[None]
+        stability_scores = calculate_stability_score(masks)
+        masks = (masks > 0).astype(np.uint8) * 255        
 
         correct_result = dict(image_info=pred_result['image_info'], annotations=[])
         for ann, mask, score, stab_score in zip(pred_result['annotations'], masks, scores, stability_scores):

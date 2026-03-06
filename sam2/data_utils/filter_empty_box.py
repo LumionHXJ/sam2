@@ -36,22 +36,28 @@ def filter_raw_annotations(data_path, rubbing_root, segmap_root, output_path):
         image_name = os.path.basename(data['Rubbing'])
 
         if not os.path.exists(os.path.join(segmap_root, image_name)):
-            raise FileNotFoundError(f"Facsimile image {image_name} not found in {rubbing_root}")
+            print(f"Facsimile image {image_name} not found in {segmap_root}")
+            continue
         
         rubbing = cv2.imread(os.path.join(rubbing_root, image_name), cv2.IMREAD_GRAYSCALE)
         facsimile = cv2.imread(os.path.join(segmap_root, image_name), flags=cv2.IMREAD_GRAYSCALE)
         _, binary_rubbing = cv2.threshold(rubbing, 127, 255, cv2.THRESH_BINARY)
+        H, W = rubbing.shape[:2]
 
         # CHECK SHAPE etc.
         for sentence in data['RecordUtilSentenceGroupVoList']:
             new_sentence = dict(GroupCategory=sentence['GroupCategory'], RecordUtilOracleCharVoList=[])
             for char in sentence["RecordUtilOracleCharVoList"]:
+                x, y, w, h = list(map(int, char['Position'].split(',')))
+                # 训练数据排除原则：越界 + 空类别 + 边界/大噪声
+                # 测试数据排除原则：越界
+                if x < 0 or y < 0 or x + w > W or y + h > H: # 越界
+                    continue
                 if char['Label'] is None:
-                    if not check_borderline(binary_rubbing, facsimile, list(map(int, char['Position'].split(',')))):
-                        # 如果不在边界，则保留（可能是漏标的）
-                        new_sentence['RecordUtilOracleCharVoList'].append(char)
+                    continue
                 else:
-                    new_sentence['RecordUtilOracleCharVoList'].append(char)
+                    if not check_borderline(binary_rubbing, facsimile, list(map(int, char['Position'].split(',')))):
+                        new_sentence['RecordUtilOracleCharVoList'].append(char)
             new_data['RecordUtilSentenceGroupVoList'].append(new_sentence)
         new_datas.append(new_data)
     with open(output_path, 'w') as f:
@@ -60,7 +66,7 @@ def filter_raw_annotations(data_path, rubbing_root, segmap_root, output_path):
 if __name__ == '__main__':
     filter_raw_annotations(
         data_path='data/OBIMD_raw_hj/label.json',
-        rubbing_root='/data/huxingjian/historical_document/OBIMD/raw/JPEGImages',
-        segmap_root='/data/huxingjian/historical_document/OBIMD/raw/Segmentation_noborder',
-        output_path='data/OBIMD_raw_hj/label_filtered.json'
+        rubbing_root='data/OBIMD_raw_hj/rubbing',
+        segmap_root='data/OBIMD_raw_hj/facsimile',
+        output_path='data/OBIMD_raw_hj/label_filt_train.json'
     )
