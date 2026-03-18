@@ -3,19 +3,19 @@
 scratch:
   resolution: 1024
   train_batch_size: 2
-  num_train_workers: 10
+  num_train_workers: 20
   num_frames: 1
   max_num_objects: 4
   base_lr: 5.0e-5
   vision_lr: 3.0e-5
   phases_per_epoch: 1
-  num_epochs: 5
+  num_epochs: 10
 
 dataset:
   # PATHS to Dataset
-  img_folder: data/OBIMD_raw_hj/facsimile # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_iou0.6/coldstart/facsimile_json # PATH to MOSE Annotations folder
-  file_list_txt: data/OBIMD_iou0.6/coldstart/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
+  img_folder: data/OBIMD_raw_hj/rubbing # PATH to MOSE JPEGImages folder
+  gt_folder: data/OBIMD_iou0.6/stage2/facsimile_json # PATH to MOSE Annotations folder
+  file_list_txt: data/OBIMD_iou0.6/stage2/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 1
 
 # Video transforms
@@ -305,7 +305,7 @@ trainer:
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
-      strict: False
+      strict: False # ADD high res deconv
       ignore_unexpected_keys: null
       ignore_missing_keys: null
 

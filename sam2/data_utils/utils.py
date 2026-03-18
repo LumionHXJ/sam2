@@ -311,3 +311,48 @@ def filter_small_connected_components(binary_img, min_area=20):
         if area >= min_area:
             filtered_img[labels == i] = 255
     return filtered_img
+
+def update_training_dataset(
+    input_dir: str, 
+    output_dir: str, 
+    accept_dir: str = None, 
+    train_list: list = [], 
+    new_train_txt: str = '',
+    iou_threshold: float = 0.6):
+    """
+    更新训练数据集，将input_dir中的文件根据train_list中的文件名复制到output_dir中，
+    同时将accept_dir中的文件也复制到output_dir中。
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    total_annotations = 0
+    for file in train_list:
+        file = file + '.json'
+        annotations = []
+        image_info = {}
+        if accept_dir is not None and os.path.exists(os.path.join(accept_dir, file)):
+            with open(os.path.join(accept_dir, file)) as f:
+                data = json.load(f)
+            annotations.extend(data['annotations'])
+            image_info = data['image_info']
+
+        if os.path.exists(os.path.join(input_dir, file)):
+            try:
+                with open(os.path.join(input_dir, file)) as f:
+                    data = json.load(f)
+            except:
+                raise ValueError(f"Error loading {file} in {input_dir}")
+            annotations.extend([annotation for annotation in data['annotations'] if annotation['predicted_iou'] > iou_threshold])
+            image_info = data['image_info']
+            
+        filter_annotions = dict(image_info=image_info, annotations=annotations)
+        total_annotations += len(filter_annotions['annotations'])
+        if len(filter_annotions['annotations']) == 0:
+            continue
+        with open(os.path.join(output_dir, file), 'w') as f:
+            json.dump(filter_annotions, f, indent=2)
+
+    print(f"Total accept annotations: {total_annotations}")
+    with open(new_train_txt, 'w') as f:
+        for file in os.listdir(output_dir):
+            if file.split('.')[0] in train_list:
+                f.write(file.split('.')[0] + '\n')

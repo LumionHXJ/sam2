@@ -10,5 +10,8 @@ outputs/*
 checkpoints/*.pt
 demo/backend/checkpoints/*.pt
 data/*
+data
 sam2_logs/*
 checkpoints/
+runs/*
+temp.ipynb

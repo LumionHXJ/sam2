@@ -11,23 +11,18 @@ from pycocotools import mask as maskUtils
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
 from sam2.data_utils.utils import (load_raw_annotations, calculate_stability_score,
-                                  get_tight_box, get_tight_mask, calc_mask_iou,
-                                  filter_small_connected_components)
-from sam2.data_utils.generate_align_data_by_shift import optimize_label_with_shifts
+                                  get_tight_box, filter_small_connected_components)
+from sam2.data_utils.coldstart.generate_align_data_by_shift import optimize_label_with_shifts
 
 # 全局常量定义 (在主进程中定义，子进程会继承)
-SAM2_CHECKPOINT = "sam2_logs/configs/sam2.1_iou_exp/iou0.6/sam2.1_hiera_l_OBIMD_stage3.yaml/checkpoints/checkpoint_10.pt"
+SAM2_CHECKPOINT = "sam2_logs/configs/sam2.1_training_stage1/sam2.1_hiera_l_OBIMD_stage1.yaml/checkpoints/checkpoint_10.pt"
 MODEL_CFG = "configs/sam2.1/sam2.1_hiera_l_highres.yaml"
-SAM2_FACS_CHECKPOINT = 'sam2_logs/configs/sam2.1_training_highres/sam2.1_hiera_l_OBIMD_facs/checkpoints/checkpoint.pt'
+SAM2_FACS_CHECKPOINT = 'sam2_logs/configs/sam2.1_training_stage1/sam2.1_hiera_l_OBIMD_facs.yaml/checkpoints/checkpoint_5.pt'
 
 RUBBING_DIR = 'data/OBIMD_raw_hj/rubbing'
 FACS_DIR = 'data/OBIMD_raw_hj/facsimile'
-ACCEPTED_DIR = 'data/OBIMD_iou0.6/stage3/facsimile_json'
-OUTPUT_DIR = 'data/OBIMD_iou0.6/stage4/facsimile_json_replace'
-
-# 注意：load_raw_annotations 比较耗时，最好在主进程加载一次，然后分发给子进程
-# 但为了代码更简单且避免大对象的进程间拷贝，这里选择让每个子进程自行加载
-# 如果 data_lookup 非常大，可以考虑使用 multiprocessing.Manager 来共享
+ACCEPTED_DIR = 'data/OBIMD_iou0.6/stage2/facsimile_json'
+OUTPUT_DIR = 'data/OBIMD_iou0.6/stage3/facsimile_json_replace'
 
 def task_worker(gpu_id, task_list):
     """
@@ -165,7 +160,7 @@ def task_worker(gpu_id, task_list):
 
 def main():
     """主函数，负责启动多进程任务。"""
-    num_processes = 8  # 使用8个进程
+    num_processes = 2  # 使用8个进程
 
     # 1. 加载完整的任务列表
     print("正在加载任务列表...")

@@ -8,10 +8,10 @@ from pycocotools import mask as maskUtils
 from tqdm import tqdm
 from sam2.data_utils.utils import load_raw_annotations, extract_connected_component_opencv
 
-LABEL_JSON = 'data/OBIMD_raw_hj/label.json'
+LABEL_JSON = 'data/OBIMD_raw_hj/label_filt_train.json'
 IMAGE_ROOT = 'data/OBIMD_raw_hj/rubbing'
 OUTPUT_DIR = 'data/OBIMD_raw_hj/facsimile_json'
-SEGMAP_ROOT = 'data/OBIMD_raw_hj/facsimile'
+SEGMAP_ROOT = 'data/OBIMD_raw_hj/facsimile_no_border'
 EXPAND = 0
 
 with open(LABEL_JSON) as f:
@@ -23,6 +23,7 @@ for image_id, data in tqdm(enumerate(datas)):
     image_name = os.path.basename(data['Rubbing'])
     # CHECK SHAPE etc.
     if not os.path.exists(os.path.join(SEGMAP_ROOT, image_name)):
+        print(f'No facsimile found for {image_name}')
         continue
     facsimile = cv2.imread(os.path.join(SEGMAP_ROOT, image_name), flags=cv2.IMREAD_GRAYSCALE)
     W, H = Image.open(os.path.join(IMAGE_ROOT, image_name)).size

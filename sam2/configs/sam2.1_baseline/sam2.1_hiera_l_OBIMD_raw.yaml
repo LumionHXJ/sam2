@@ -198,6 +198,8 @@ trainer:
     
     num_init_cond_frames_for_eval: 1  # only mask on the first frame
     forward_backbone_per_frame_for_eval: True
+    sam_mask_decoder_extra_args:
+      use_highres_output: true
     
 
   data:
@@ -308,7 +310,7 @@ trainer:
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
-      strict: True # ADD high res deconv
+      strict: False # ADD high res deconv
       ignore_unexpected_keys: null
       ignore_missing_keys: null
 

@@ -1,5 +1,4 @@
 # 数据飞轮阶段间，使用当前最佳的模型，尝试修改之前的打标结果（如果置信度更高)
-# TOFIX: 目前没有支持用置信度高的替换低的
 
 from sam2.build_sam import build_sam2
 from sam2.sam2_image_predictor import SAM2ImagePredictor
@@ -14,14 +13,11 @@ import shutil
 from sam2.data_utils.utils import calculate_stability_score
 
 # checkpoint from last round
-sam2_checkpoint = "sam2_logs/configs/sam2.1_training/sam_flywheel_round1/checkpoints/checkpoint_1.pt"
-last_round_data = 'data/OBIMD_HJ_diff/fascimile_json_init'
-output_dir = 'data/OBIMD_HJ_diff/fascimile_json_round1_out'
-model_cfg = "configs/sam2.1/sam2.1_hiera_l.yaml"
-mask_threshold = 0
-stability_score_offset = 1.0 
+sam2_checkpoint = "sam2_logs/configs/sam2.1_training_stage1/sam2.1_hiera_l_OBIMD_coldstart.yaml/checkpoints/checkpoint_10.pt"
+last_round_data = 'data/OBIMD_sam/coldstart/facsimile_json_full'
+output_dir = 'data/OBIMD_sam/stage1/facsimile_json_full'
+model_cfg = "sam2/configs/sam2.1/sam2.1_hiera_l_highres.yaml"
 sam2_model = build_sam2(model_cfg, sam2_checkpoint, device='cuda:2')
-iou_threshold_last_round = 0.7 # last data filter (only try to correct this part)
 
 os.makedirs(output_dir, exist_ok=True)
 with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):

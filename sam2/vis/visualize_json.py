@@ -7,10 +7,10 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-json_dir = "data/OBIMD_test100/facsimile_json"
-rubbing_dir = "data/OBIMD_test100/rubbing"
-facsimile_dir = "data/OBIMD_test100/facsimile"
-vis_dir = "data/OBIMD_test100/visualization"
+json_dir = "data/OBIMD_raw_hj/facsimile_json"
+rubbing_dir = "data/OBIMD_raw_hj/rubbing"
+facsimile_dir = "data/OBIMD_raw_hj/facsimile_no_border"
+vis_dir = "data/OBIMD_raw_hj/visualization"
 
 random.seed(42)
 file_list = random.sample(os.listdir(json_dir), 100) # fixed for same generation
@@ -63,4 +63,4 @@ for file in file_list:
     
     overlay = cv2.addWeighted(image, 0.5, mask, 0.5, 0)
     combined = np.hstack((image, overlay, facsimile))
-    cv2.imwrite(output_path, overlay)
+    cv2.imwrite(output_path, combined)
