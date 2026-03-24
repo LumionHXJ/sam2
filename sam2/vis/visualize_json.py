@@ -7,10 +7,10 @@ import numpy as np
 import random
 import matplotlib.pyplot as plt
 
-json_dir = "data/OBIMD_raw_hj/facsimile_json"
+json_dir = "data/OBIMD_sam/stage1/facsimile_json_full"
 rubbing_dir = "data/OBIMD_raw_hj/rubbing"
 facsimile_dir = "data/OBIMD_raw_hj/facsimile_no_border"
-vis_dir = "data/OBIMD_raw_hj/visualization"
+vis_dir = "data/OBIMD_sam/stage1/visualization"
 
 random.seed(42)
 file_list = random.sample(os.listdir(json_dir), 100) # fixed for same generation

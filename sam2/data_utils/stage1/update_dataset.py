@@ -10,5 +10,5 @@ if __name__ == '__main__':
         accept_dir='data/OBIMD_iou0.6/stage2/facsimile_json',
         train_list=train_list,
         new_train_txt='data/OBIMD_iou0.6/stage3/train.txt',
-        iou_threshold=0,
+        iou_threshold=0, # 0 for last stage
     )

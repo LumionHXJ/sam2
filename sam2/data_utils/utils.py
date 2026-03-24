@@ -356,3 +356,41 @@ def update_training_dataset(
         for file in os.listdir(output_dir):
             if file.split('.')[0] in train_list:
                 f.write(file.split('.')[0] + '\n')
+
+
+def filter_training_dataset(
+    input_dir: str, 
+    output_dir: str, 
+    train_list: list = [], 
+    new_train_txt: str = '',
+    iou_threshold: float = 0.6):
+    """
+    筛选训练数据集，只保留 input_dir 中 predicted_iou 大于阈值的标注，输出到 output_dir。
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    total_annotations = 0
+    for file in train_list:
+        file = file + '.json'
+        annotations = []
+        image_info = {}
+        if os.path.exists(os.path.join(input_dir, file)):
+            try:
+                with open(os.path.join(input_dir, file)) as f:
+                    data = json.load(f)
+            except:
+                raise ValueError(f"Error loading {file} in {input_dir}")
+            annotations = [annotation for annotation in data['annotations'] if annotation['predicted_iou'] > iou_threshold]
+            image_info = data['image_info']
+            
+        filter_annotions = dict(image_info=image_info, annotations=annotations)
+        total_annotations += len(filter_annotions['annotations'])
+        if len(filter_annotions['annotations']) == 0:
+            continue
+        with open(os.path.join(output_dir, file), 'w') as f:
+            json.dump(filter_annotions, f, indent=2)
+
+    print(f"Total accept annotations: {total_annotations}")
+    with open(new_train_txt, 'w') as f:
+        for file in os.listdir(output_dir):
+            if file.split('.')[0] in train_list:
+                f.write(file.split('.')[0] + '\n')
