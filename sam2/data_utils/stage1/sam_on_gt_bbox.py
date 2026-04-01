@@ -15,14 +15,16 @@ from sam2.data_utils.utils import (load_raw_annotations, calculate_stability_sco
 from sam2.data_utils.coldstart.generate_align_data_by_shift import optimize_label_with_shifts
 
 # 全局常量定义 (在主进程中定义，子进程会继承)
-SAM2_CHECKPOINT = "sam2_logs/configs/sam2.1_training_stage1/sam2.1_hiera_l_OBIMD_stage1.yaml/checkpoints/checkpoint_10.pt"
+complete_iteration = 3
+SAM2_CHECKPOINT = f"sam2_logs/configs/sam2.1_training_stage1/sam2.1_hiera_l_OBIMD_stage{complete_iteration}.yaml/checkpoints/checkpoint_10.pt"
 MODEL_CFG = "configs/sam2.1/sam2.1_hiera_l_highres.yaml"
 SAM2_FACS_CHECKPOINT = 'sam2_logs/configs/sam2.1_training_stage1/sam2.1_hiera_l_OBIMD_facs.yaml/checkpoints/checkpoint_5.pt'
 
 RUBBING_DIR = 'data/OBIMD_raw_hj/rubbing'
 FACS_DIR = 'data/OBIMD_raw_hj/facsimile'
-ACCEPTED_DIR = 'data/OBIMD_iou0.6/stage2/facsimile_json'
-OUTPUT_DIR = 'data/OBIMD_iou0.6/stage3/facsimile_json_replace'
+ACCEPTED_DIR = f'data/OBIMD_iou0.6/stage{complete_iteration}/facsimile_json'
+OUTPUT_DIR = f'data/OBIMD_iou0.6/stage{complete_iteration+1}/facsimile_json_replace'
+LABEL_JSON_PATH = "data/OBIMD_raw_hj/label_filtered.json"
 
 def task_worker(gpu_id, task_list):
     """
@@ -42,8 +44,8 @@ def task_worker(gpu_id, task_list):
         return
 
     # 2. 加载原始标注数据
-    data_lookup = load_raw_annotations("data/OBIMD_raw_hj/label_filt_train.json",
-                                       "data/OBIMD_raw_hj/facsimile",
+    data_lookup = load_raw_annotations(LABEL_JSON_PATH,
+                                       FACS_DIR,
                                        ignore_null=True)
 
     # 3. 确保输出目录存在
@@ -160,11 +162,11 @@ def task_worker(gpu_id, task_list):
 
 def main():
     """主函数，负责启动多进程任务。"""
-    num_processes = 2  # 使用8个进程
+    num_processes = 4  # 使用8个进程
 
     # 1. 加载完整的任务列表
     print("正在加载任务列表...")
-    with open("data/OBIMD_raw_hj/train.txt") as f:
+    with open("data/OBIMD_raw_hj/test.txt") as f:
         train_list = [line.strip() for line in f.readlines()]
 
     total_tasks = len(train_list)

@@ -14,7 +14,7 @@ scratch:
 dataset:
   # PATHS to Dataset
   img_folder: data/OBIMD_raw_hj/rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_raw_hj/facsimile_json # PATH to MOSE Annotations folder
+  gt_folder: data/OBIMD_raw_hj/facsimile_json_raw # PATH to MOSE Annotations folder
   file_list_txt: data/OBIMD_raw_hj/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 1
 
@@ -306,7 +306,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 10 # 0 only last checkpoint is saved.
+    save_freq: 5 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model

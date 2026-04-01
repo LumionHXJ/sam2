@@ -1,4 +1,4 @@
-path: /data/huxingjian/workspace/sam2/data/OBIMD_raw_hj/yolo/ # dataset root dir
+path: /home/huxingjian/workspace/sam2/data/OBIMD_iou0.6/stage3/yolo # dataset root dir
 train: images/train # train images (relative to 'path') 4 images
 val: images/test # val images (relative to 'path') 4 images
 

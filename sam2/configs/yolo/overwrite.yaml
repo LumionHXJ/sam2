@@ -1,11 +1,10 @@
 project: 'sam2_logs/'
-multi_scale: True
 workers: 64
 flipud: 0.5
 fliplr: 0.5
 bgr: 0.5
-mosaic: 0.
-copy_paste: 0.
+mosaic: 0.5
+copy_paste: 0.5
 copy_paste_mode: 'mixup'
 auto_augment: 'randaugment'
-close_mosaic: 10
+close_mosaic: 20

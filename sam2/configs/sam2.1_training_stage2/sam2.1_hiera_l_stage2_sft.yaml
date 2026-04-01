@@ -14,8 +14,8 @@ scratch:
 dataset:
   # PATHS to Dataset
   img_folder: data/OBIMD_raw_hj/rubbing # PATH to MOSE JPEGImages folder
-  gt_folder: data/OBIMD_iou0.6/stage4/facsimile_json # PATH to MOSE Annotations folder
-  file_list_txt: data/OBIMD_iou0.6/stage4/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
+  gt_folder: data/OBIMD_iou0.6/stage3/facsimile_json # PATH to MOSE Annotations folder
+  file_list_txt: data/OBIMD_iou0.6/stage3/train.txt # Optional PATH to filelist containing a subset of videos to be used for training
   multiplier: 1
 
 # Video transforms
@@ -312,7 +312,7 @@ trainer:
 
       state_dict:
         _target_: training.utils.checkpoint_utils.load_checkpoint_and_apply_kernels
-        checkpoint_path: sam2_logs/configs/sam2.1_training_unsup/sam2.1_hiera_l_mining_pretrain.yaml/checkpoints/checkpoint_3.pt
+        checkpoint_path: sam2_logs/configs/sam2.1_training_stage2/sam2.1_hiera_l_stage2_pretrain.yaml/checkpoints/checkpoint_3.pt
         ckpt_state_dict_keys: ['model']
 
 launcher:

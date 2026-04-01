@@ -201,9 +201,9 @@ trainer:
           training: true
           video_dataset:
             _target_: training.dataset.vos_raw_dataset.SA1BRawDataset
-            img_folder: data_YQWY/raw/rubbing
-            gt_folder: data_YQWY/obichariot/facsimile_json
-            file_list_txt: data_YQWY/obichariot/train.txt
+            img_folder: data/YQWY/rubbing
+            gt_folder: data/YQWY/facsimile_json
+            file_list_txt: data/YQWY/train.txt
           sampler:
                 _target_: training.dataset.vos_sampler.RandomUniformSampler
                 num_frames: ${scratch.num_frames}
@@ -294,7 +294,7 @@ trainer:
   # initialize from a SAM 2 checkpoint
   checkpoint:
     save_dir: ${launcher.experiment_log_dir}/checkpoints
-    save_freq: 3 # 0 only last checkpoint is saved.
+    save_freq: 1 # 0 only last checkpoint is saved.
     model_weight_initializer:
       _partial_: True
       _target_: training.utils.checkpoint_utils.load_state_dict_into_model
