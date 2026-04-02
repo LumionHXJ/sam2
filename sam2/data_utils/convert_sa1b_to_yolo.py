@@ -2,7 +2,7 @@ import json
 import os
 import glob
 
-def convert_sa1b_to_yolo(input_dir, output_dir):
+def convert_sa1b_to_yolo(input_dir, output_dir, train_list, test_list):
     """
     将 SA1B 格式转换为 YOLO 格式
     :param input_dir: SA1B 格式的 JSON 文件目录
@@ -10,6 +10,8 @@ def convert_sa1b_to_yolo(input_dir, output_dir):
     """
     # 创建输出目录
     os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(os.path.join(output_dir, 'labels/train'), exist_ok=True)
+    os.makedirs(os.path.join(output_dir, 'labels/test'), exist_ok=True)
     
     # 获取所有 JSON 文件
     json_files = glob.glob(os.path.join(input_dir, '*.json'))
@@ -27,7 +29,6 @@ def convert_sa1b_to_yolo(input_dir, output_dir):
         
         # 生成 YOLO 文件名
         base_name = os.path.splitext(file_name)[0]
-        yolo_file = os.path.join(output_dir, f'{base_name}.txt')
         
         # 处理标注
         annotations = data.get('annotations', [])
@@ -35,7 +36,7 @@ def convert_sa1b_to_yolo(input_dir, output_dir):
         
         for ann in annotations:
             # 获取 crop_box
-            crop_box = ann.get('crop_box', [])
+            crop_box = ann.get('bbox', [])
             if len(crop_box) != 4:
                 continue
             
@@ -55,15 +56,24 @@ def convert_sa1b_to_yolo(input_dir, output_dir):
             yolo_lines.append(yolo_line)
         
         # 写入 YOLO 文件
-        with open(yolo_file, 'w', encoding='utf-8') as f:
-            f.write('\n'.join(yolo_lines))
-        
+        if base_name in train_list:
+            with open(os.path.join(output_dir, 'labels/train', f'{base_name}.txt'), 'w', encoding='utf-8') as f:
+                f.write('\n'.join(yolo_lines))
+        elif base_name in test_list:
+            with open(os.path.join(output_dir, 'labels/test', f'{base_name}.txt'), 'w', encoding='utf-8') as f:
+                f.write('\n'.join(yolo_lines))
+        else:
+            raise ValueError(f"文件 {base_name} 不在训练集或测试集中")
         print(f"Converted {file_name} to YOLO format")
 
 
 if __name__ == "__main__":
-    input_directory = '/data/huxingjian/workspace/sam2/data/OBIMD_raw_hj/facsimile_json'
-    output_directory = '/data/huxingjian/workspace/sam2/data/OBIMD_raw_hj/yolo'
+    input_directory = 'data/OBIMD_iou0.6/stage3/facsimile_json'
+    output_directory = 'data/OBIMD_iou0.6/stage3/yolo'
+    with open("data/OBIMD_raw_hj/train.txt") as f:
+        train_list = [f.strip() for f in f.readlines()]
+    with open("data/OBIMD_raw_hj/test.txt") as f:
+        test_list = [f.strip() for f in f.readlines()]
     
-    convert_sa1b_to_yolo(input_directory, output_directory)
+    convert_sa1b_to_yolo(input_directory, output_directory, set(train_list), set(test_list))
     print("Conversion completed!")

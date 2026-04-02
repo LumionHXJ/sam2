@@ -8,10 +8,10 @@ from pycocotools import mask as maskUtils
 from tqdm import tqdm
 from sam2.data_utils.utils import load_raw_annotations, extract_connected_component_opencv
 
-LABEL_JSON = 'data/OBIMD_raw_hj/label_filt_train.json'
+LABEL_JSON = 'data/OBIMD_raw_hj/label.json'
 IMAGE_ROOT = 'data/OBIMD_raw_hj/rubbing'
-OUTPUT_DIR = 'data/OBIMD_raw_hj/facsimile_json'
-SEGMAP_ROOT = 'data/OBIMD_raw_hj/facsimile_no_border'
+OUTPUT_DIR = 'data/OBIMD_raw_hj/facsimile_json_raw'
+SEGMAP_ROOT = 'data/OBIMD_raw_hj/facsimile'
 EXPAND = 0
 
 with open(LABEL_JSON) as f:
