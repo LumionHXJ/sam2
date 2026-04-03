@@ -32,6 +32,8 @@ class SAM2Train(SAM2Base):
         prob_to_use_pt_input_for_eval=0.0,
         prob_to_use_box_input_for_train=0.0,
         prob_to_use_box_input_for_eval=0.0,
+        prob_to_use_prompt_input_for_train=1.0,
+        prob_to_use_prompt_input_for_eval=1.0,
         # if it is greater than 1, we interactive point sampling in the 1st frame and other randomly selected frames
         num_frames_to_correct_for_train=1,  # default: only iteratively sample on first frame
         num_frames_to_correct_for_eval=1,  # default: only iteratively sample on first frame
@@ -87,6 +89,10 @@ class SAM2Train(SAM2Base):
         self.prob_to_use_box_input_for_train = prob_to_use_box_input_for_train
         self.prob_to_use_pt_input_for_eval = prob_to_use_pt_input_for_eval
         self.prob_to_use_box_input_for_eval = prob_to_use_box_input_for_eval
+        # Independent switch for whether to provide classic prompts (point/box/mask).
+        # Keep default=1.0 for backward compatibility with old training behavior.
+        self.prob_to_use_prompt_input_for_train = prob_to_use_prompt_input_for_train
+        self.prob_to_use_prompt_input_for_eval = prob_to_use_prompt_input_for_eval
         if prob_to_use_pt_input_for_train > 0 or prob_to_use_pt_input_for_eval > 0:
             logging.info(
                 f"Training with points (sampled from masks) as inputs with p={prob_to_use_pt_input_for_train}"
@@ -202,6 +208,7 @@ class SAM2Train(SAM2Base):
 
         # Randomly decide whether to use point inputs or mask inputs
         if self.training:
+            prob_to_use_prompt_input = self.prob_to_use_prompt_input_for_train
             prob_to_use_pt_input = self.prob_to_use_pt_input_for_train
             prob_to_use_box_input = self.prob_to_use_box_input_for_train
             num_frames_to_correct = self.num_frames_to_correct_for_train
@@ -209,6 +216,7 @@ class SAM2Train(SAM2Base):
             num_init_cond_frames = self.num_init_cond_frames_for_train
             rand_init_cond_frames = self.rand_init_cond_frames_for_train
         else:
+            prob_to_use_prompt_input = self.prob_to_use_prompt_input_for_eval
             prob_to_use_pt_input = self.prob_to_use_pt_input_for_eval
             prob_to_use_box_input = self.prob_to_use_box_input_for_eval
             num_frames_to_correct = self.num_frames_to_correct_for_eval
@@ -223,6 +231,7 @@ class SAM2Train(SAM2Base):
             num_init_cond_frames = 1
         assert num_init_cond_frames >= 1
         # (here `self.rng.random()` returns value in range 0.0 <= X < 1.0)
+        use_prompt_input = self.rng.random() < prob_to_use_prompt_input
         use_pt_input = self.rng.random() < prob_to_use_pt_input
         if rand_init_cond_frames and num_init_cond_frames > 1:
             # randomly select 1 to `num_init_cond_frames` frames as initial conditioning frames
@@ -259,6 +268,15 @@ class SAM2Train(SAM2Base):
         use_negative_prototype = (prob_negative_prototype > 0 and
                                  self.rng.random() < prob_negative_prototype)
 
+        # Ensure at least one input source is used (classic prompt or prototype).
+        if not use_prompt_input and not use_prototype:
+            # Both not selected, force select one (50/50 probability).
+            if self.rng.random() < 0.5:
+                use_prompt_input = True
+                use_pt_input = self.rng.random() < prob_to_use_pt_input
+            else:
+                use_prototype = True
+
         # Check if prototypes are available (non-None labels)
         # If all labels are None, force fallback to classic box/point prompts
         has_valid_labels = False
@@ -285,6 +303,7 @@ class SAM2Train(SAM2Base):
         else:
             backbone_out["labels_per_frame"] = None
 
+        backbone_out["use_prompt_input"] = use_prompt_input
         backbone_out["use_pt_input"] = use_pt_input
 
         # Sample initial conditioning frames
@@ -364,38 +383,42 @@ class SAM2Train(SAM2Base):
                 else:
                     backbone_out["point_inputs_per_frame"][t] = negative_prompts
 
-            if not use_pt_input: # for misalign correction
-                backbone_out["mask_inputs_per_frame"][t] = gt_masks_per_frame[t]
-                # sample box input for second frame
-                points, labels = sample_box_points(
-                    gt_masks_per_frame[1],
-                 )
-                point_inputs = {"point_coords": points, "point_labels": labels}
-                backbone_out["point_inputs_per_frame"][1] = point_inputs
-            else:
-                # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
-                use_box_input = self.rng.random() < prob_to_use_box_input
-                if use_box_input:
+            # Keep legacy behavior when classic prompts are enabled:
+            # use_pt_input=False means mask prompt + a correction box on frame 1.
+            # When use_prompt_input=False, skip classic prompt construction entirely.
+            if use_prompt_input:
+                if not use_pt_input:  # for misalign correction
+                    backbone_out["mask_inputs_per_frame"][t] = gt_masks_per_frame[t]
+                    # sample box input for second frame
                     points, labels = sample_box_points(
-                        gt_masks_per_frame[t],
-                    )
+                        gt_masks_per_frame[1],
+                     )
+                    point_inputs = {"point_coords": points, "point_labels": labels}
+                    backbone_out["point_inputs_per_frame"][1] = point_inputs
                 else:
-                    # (here we only sample **one initial point** on initial conditioning frames from the
-                    # ground-truth mask; we may sample more correction points on the fly)
-                    points, labels = get_next_point(
-                        gt_masks=gt_masks_per_frame[t],
-                        pred_masks=None,
-                        method=(
-                            "uniform" if self.training else self.pt_sampling_for_eval
-                        ),
-                    )
+                    # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
+                    use_box_input = self.rng.random() < prob_to_use_box_input
+                    if use_box_input:
+                        points, labels = sample_box_points(
+                            gt_masks_per_frame[t],
+                        )
+                    else:
+                        # (here we only sample **one initial point** on initial conditioning frames from the
+                        # ground-truth mask; we may sample more correction points on the fly)
+                        points, labels = get_next_point(
+                            gt_masks=gt_masks_per_frame[t],
+                            pred_masks=None,
+                            method=(
+                                "uniform" if self.training else self.pt_sampling_for_eval
+                            ),
+                        )
 
-                point_inputs = {"point_coords": points, "point_labels": labels}
-                backbone_out["point_inputs_per_frame"][t] = point_inputs
+                    point_inputs = {"point_coords": points, "point_labels": labels}
+                    backbone_out["point_inputs_per_frame"][t] = point_inputs
 
         # Sample frames where we will add correction clicks on the fly
         # based on the error between prediction and ground-truth masks
-        if not use_pt_input:
+        if not use_prompt_input or not use_pt_input:
             # no correction points will be sampled when using mask inputs
             frames_to_add_correction_pt = []
         elif num_frames_to_correct == num_init_cond_frames:

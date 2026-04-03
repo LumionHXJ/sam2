@@ -49,6 +49,7 @@ class PromptEncoder(nn.Module):
         ]
         self.point_embeddings = nn.ModuleList(point_embeddings)
         self.not_a_point_embed = nn.Embedding(1, embed_dim)
+        self.prototype_embedding = nn.Embedding(1, embed_dim)
 
         self.mask_input_size = (
             4 * image_embedding_size[0],
@@ -195,8 +196,13 @@ class PromptEncoder(nn.Module):
             box_embeddings = self._embed_boxes(boxes)
             sparse_embeddings = torch.cat([sparse_embeddings, box_embeddings], dim=1)
 
-        # NEW: Concatenate prototype embeddings
+        # NEW: Concatenate prototype embeddings with learnable token
         if prototype_embeddings is not None:
+            # Add learnable embedding token to each prototype
+            B, N_proto, C = prototype_embeddings.shape
+            proto_token_embed = self.prototype_embedding.weight.unsqueeze(0).unsqueeze(0)  # [1, 1, C]
+            proto_token_embed = proto_token_embed.expand(B, N_proto, -1)  # [B, N_proto, C]
+            prototype_embeddings = prototype_embeddings + proto_token_embed
             sparse_embeddings = torch.cat([sparse_embeddings, prototype_embeddings], dim=1)
 
         if masks is not None:
