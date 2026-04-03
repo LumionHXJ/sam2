@@ -13,6 +13,8 @@ import logging
 import random
 from typing import Iterable
 
+import cv2
+import numpy as np
 import torch
 import torchvision.transforms as T
 import torchvision.transforms.functional as F
@@ -526,3 +528,217 @@ class RandomMosaicVideoAPI:
             )
 
         return datapoint
+
+
+class RandomMorphology:
+    """
+    Random morphology dilation and erosion for rubbing images.
+
+    This transform applies random dilation or erosion to simulate variations in
+    rubbing image quality. Dilation makes characters thicker, erosion makes them thinner.
+
+    Args:
+        p (float): Probability of applying transform. Default: 0.5
+        kernel_size_range (tuple): Range of kernel sizes for morphology operations (min, max). Default: (3, 15)
+        operation (str): Type of morphology operation - 'random', 'dilate', or 'erode'. Default: 'random'
+        iterations_range (tuple): Range of iterations for morphology (min, max). Default: (1, 3)
+        consistent_transform (bool): Whether to use same transform across frames. Default: True
+    """
+    def __init__(
+        self,
+        p=0.5,
+        kernel_size_range=(3, 15),
+        operation='random',
+        iterations_range=(1, 3),
+        consistent_transform=True
+    ):
+        self.p = p
+        self.kernel_size_range = kernel_size_range
+        self.operation = operation
+        self.iterations_range = iterations_range
+        self.consistent_transform = consistent_transform
+
+        if self.operation not in ['random', 'dilate', 'erode']:
+            raise ValueError(f"operation must be 'random', 'dilate', or 'erode', got {self.operation}")
+
+    def __call__(self, datapoint: VideoDatapoint, **kwargs):
+        if self.consistent_transform:
+            # Generate random parameters once for all frames
+            if random.random() < self.p:
+                # Random operation
+                if self.operation == 'random':
+                    use_dilate = random.random() < 0.5
+                elif self.operation == 'dilate':
+                    use_dilate = True
+                else:  # 'erode'
+                    use_dilate = False
+
+                # Random kernel size (must be odd)
+                kernel_size = random.randint(*self.kernel_size_range)
+                if kernel_size % 2 == 0:
+                    kernel_size += 1
+
+                # Random iterations
+                iterations = random.randint(*self.iterations_range)
+
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+                op = cv2.MORPH_DILATE if use_dilate else cv2.MORPH_ERODE
+
+                for img in datapoint.frames:
+                    img.data = self._apply_morphology(img.data, op, kernel, iterations)
+            return datapoint
+
+        # Generate random parameters per frame
+        for img in datapoint.frames:
+            if random.random() < self.p:
+                # Random operation
+                if self.operation == 'random':
+                    use_dilate = random.random() < 0.5
+                elif self.operation == 'dilate':
+                    use_dilate = True
+                else:  # 'erode'
+                    use_dilate = False
+
+                # Random kernel size (must be odd)
+                kernel_size = random.randint(*self.kernel_size_range)
+                if kernel_size % 2 == 0:
+                    kernel_size += 1
+
+                # Random iterations
+                iterations = random.randint(*self.iterations_range)
+
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_size, kernel_size))
+                op = cv2.MORPH_DILATE if use_dilate else cv2.MORPH_ERODE
+
+                img.data = self._apply_morphology(img.data, op, kernel, iterations)
+
+        return datapoint
+
+    def _apply_morphology(self, img_data, op, kernel, iterations):
+        """Apply morphology operation to image data."""
+        if isinstance(img_data, PILImage.Image):
+            # Convert PIL to numpy
+            img_np = np.array(img_data)
+            is_pil = True
+        elif isinstance(img_data, torch.Tensor):
+            # Convert tensor to numpy
+            if img_data.dim() == 3:  # (C, H, W)
+                img_np = img_data.permute(1, 2, 0).cpu().numpy()
+            else:
+                raise ValueError(f"Expected 3D tensor (C, H, W), got {img_data.dim()}D")
+            is_pil = False
+        else:
+            raise TypeError(f"Unsupported type for morphology: {type(img_data)}")
+
+        # Apply morphology to each channel (or use first channel for grayscale-like images)
+        if img_np.shape[2] == 3:
+            # RGB image - apply to each channel
+            result = np.zeros_like(img_np)
+            for c in range(3):
+                result[:, :, c] = cv2.morphologyEx(img_np[:, :, c], op, kernel, iterations=iterations)
+        else:
+            result = cv2.morphologyEx(img_np, op, kernel, iterations=iterations)
+
+        # Convert back to original format
+        if is_pil:
+            return PILImage.fromarray(result.astype(np.uint8))
+        else:
+            return torch.from_numpy(result).permute(2, 0, 1).to(img_data.device)
+
+
+class RandomRubbingDropout:
+    """
+    Random dropout that occludes foreground regions to simulate rubbing breaks and white spaces.
+
+    This transform randomly adds white patches/drops to simulate natural breaks
+    and white areas found in oracle bone rubbing images.
+
+    Args:
+        p (float): Probability of applying transform. Default: 0.3
+        num_drops_range (tuple): Range of number of dropout patches to add (min, max). Default: (1, 5)
+        drop_size_range (tuple): Range of dropout patch sizes (min, max). Default: (10, 50)
+        consistent_transform (bool): Whether to use same transform across frames. Default: True
+        drop_value (tuple): RGB value for dropout patches. Default: (255, 255, 255) (white)
+    """
+    def __init__(
+        self,
+        p=0.3,
+        num_drops_range=(1, 5),
+        drop_size_range=(10, 50),
+        consistent_transform=True,
+        drop_value=(255, 255, 255)
+    ):
+        self.p = p
+        self.num_drops_range = num_drops_range
+        self.drop_size_range = drop_size_range
+        self.consistent_transform = consistent_transform
+        self.drop_value = drop_value
+
+    def __call__(self, datapoint: VideoDatapoint, **kwargs):
+        if self.consistent_transform:
+            # Generate random parameters once for all frames
+            if random.random() < self.p:
+                num_drops = random.randint(*self.num_drops_range)
+                drop_params = []
+
+                for _ in range(num_drops):
+                    # Random drop size
+                    drop_h = random.randint(*self.drop_size_range)
+                    drop_w = random.randint(*self.drop_size_range)
+                    # Random position will be determined per frame based on image size
+                    drop_params.append((drop_h, drop_w))
+
+                for img in datapoint.frames:
+                    img.data = self._apply_dropout(img.data, drop_params)
+            return datapoint
+
+        # Generate random parameters per frame
+        for img in datapoint.frames:
+            if random.random() < self.p:
+                num_drops = random.randint(*self.num_drops_range)
+                drop_params = []
+
+                for _ in range(num_drops):
+                    # Random drop size
+                    drop_h = random.randint(*self.drop_size_range)
+                    drop_w = random.randint(*self.drop_size_range)
+                    drop_params.append((drop_h, drop_w))
+
+                img.data = self._apply_dropout(img.data, drop_params)
+
+        return datapoint
+
+    def _apply_dropout(self, img_data, drop_params):
+        """Apply dropout patches to image data."""
+        if isinstance(img_data, PILImage.Image):
+            # Convert PIL to numpy
+            img_np = np.array(img_data)
+            is_pil = True
+        elif isinstance(img_data, torch.Tensor):
+            # Convert tensor to numpy
+            if img_data.dim() == 3:  # (C, H, W)
+                img_np = img_data.permute(1, 2, 0).cpu().numpy()
+            else:
+                raise ValueError(f"Expected 3D tensor (C, H, W), got {img_data.dim()}D")
+            is_pil = False
+        else:
+            raise TypeError(f"Unsupported type for dropout: {type(img_data)}")
+
+        h, w = img_np.shape[:2]
+
+        for drop_h, drop_w in drop_params:
+            # Random position
+            y = random.randint(0, max(0, h - drop_h))
+            x = random.randint(0, max(0, w - drop_w))
+
+            # Apply dropout
+            if len(img_np.shape) == 3:  # RGB
+                img_np[y:y+drop_h, x:x+drop_w] = self.drop_value
+            else:  # Grayscale
+                img_np[y:y+drop_h, x:x+drop_w] = self.drop_value[0]
+
+        # Convert back to original format
+        if is_pil:
+            return PILImage.fromarray(img_np.astype(np.uint8))
+        else:
+            return torch.from_numpy(img_np).permute(2, 0, 1).to(img_data.device)

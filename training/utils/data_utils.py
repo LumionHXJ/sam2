@@ -42,6 +42,7 @@ class BatchedVideoDatapoint:
         masks: A [TxOxHxW] tensor containing binary masks for each object in the batch.
         metadata: An instance of BatchedVideoMetaData containing metadata about the batch.
         dict_key: A string key used to identify the batch.
+        labels: A list of length T, where each element is a list of labels for objects in that frame.
     """
 
     img_batch: torch.FloatTensor
@@ -50,6 +51,7 @@ class BatchedVideoDatapoint:
     metadata: BatchedVideoMetaData
 
     dict_key: str
+    labels: Optional[List[List[str]]] = None  # NEW: Labels for each object in each frame
 
     def pin_memory(self, device=None):
         return self.apply(torch.Tensor.pin_memory, device=device)
@@ -94,6 +96,8 @@ class Object:
     # Index of the frame in the media (0 if single image)
     frame_index: int
     segment: Union[torch.Tensor, dict]  # RLE dict or binary mask
+    label: str = None              # Character label (prototype ID)
+    sub_label: str = None          # Sub-label
 
 
 @dataclass
@@ -134,6 +138,7 @@ def collate_fn(
     step_t_obj_to_frame_idx = [
         [] for _ in range(T)
     ]  # List to store frame indices for each time step
+    step_t_labels = [[] for _ in range(T)]  # NEW: Store labels for each time step
 
     for video_idx, video in enumerate(batch):
         orig_video_id = video.video_id
@@ -151,6 +156,8 @@ def collate_fn(
                     torch.tensor([orig_video_id, orig_obj_id, orig_frame_idx])
                 )
                 step_t_frame_orig_size[t].append(torch.tensor(orig_frame_size))
+                # NEW: Store label information
+                step_t_labels[t].append(obj.label)
 
     obj_to_frame_idx = torch.stack(
         [
@@ -166,6 +173,9 @@ def collate_fn(
     frame_orig_size = torch.stack(
         [torch.stack(id, dim=0) for id in step_t_frame_orig_size], dim=0
     )
+    # NEW: Create labels list
+    labels = [frame_labels for frame_labels in step_t_labels]
+
     return BatchedVideoDatapoint(
         img_batch=img_batch,
         obj_to_frame_idx=obj_to_frame_idx,
@@ -176,4 +186,5 @@ def collate_fn(
         ),
         dict_key=dict_key,
         batch_size=[T],
+        labels=labels,  # NEW: Add labels field
     )

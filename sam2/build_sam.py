@@ -161,6 +161,54 @@ def build_sam2_video_predictor_hf(model_id, **kwargs):
     )
 
 
+def build_sam2_image_predictor_with_prototype(
+    config_file,
+    ckpt_path=None,
+    device="cuda",
+    mode="eval",
+    prototype_root="data/镜原数据库/字头图像",
+    hydra_overrides_extra=[],
+    apply_postprocessing=True,
+    **kwargs,
+):
+    """Build a SAM2ImagePredictorWithPrototype instance.
+
+    Arguments:
+      config_file: Path to the config file (relative to configs/ directory).
+      ckpt_path: Path to the checkpoint file.
+      device: Device to load the model on.
+      mode: Mode to load the model in ("eval" or "train").
+      prototype_root: Path to directory containing prototype character images.
+      hydra_overrides_extra: Additional hydra config overrides.
+      apply_postprocessing: Whether to apply postprocessing.
+      **kwargs: Additional arguments to pass to the predictor.
+
+    Returns:
+      SAM2ImagePredictorWithPrototype: The image predictor with prototype support.
+    """
+    from sam2.sam2_image_predictor_prototype import SAM2ImagePredictorWithPrototype
+
+    if apply_postprocessing:
+        hydra_overrides_extra = hydra_overrides_extra.copy()
+        hydra_overrides_extra += [
+            # dynamically fall back to multi-mask if the single mask is not stable
+            "++model.sam_mask_decoder_extra_args.dynamic_multimask_via_stability=true",
+            "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_delta=0.05",
+            "++model.sam_mask_decoder_extra_args.dynamic_multimask_stability_thresh=0.98",
+        ]
+    # Read config and init model
+    cfg = compose(config_name=config_file, overrides=hydra_overrides_extra)
+    OmegaConf.resolve(cfg)
+    model = instantiate(cfg.model, _recursive_=True)
+    _load_checkpoint(model, ckpt_path)
+    model = model.to(device)
+    if mode == "eval":
+        model.eval()
+    return SAM2ImagePredictorWithPrototype(
+        model, prototype_root=prototype_root, **kwargs
+    )
+
+
 def _load_checkpoint(model, ckpt_path):
     if ckpt_path is not None:
         sd = torch.load(ckpt_path, map_location="cpu", weights_only=True)["model"]

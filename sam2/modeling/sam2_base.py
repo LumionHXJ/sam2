@@ -93,8 +93,17 @@ class SAM2Base(torch.nn.Module):
         # extra arguments used to construct the SAM mask decoder; if not None, it should be a dict of kwargs to be passed into `MaskDecoder` class.
         sam_mask_decoder_extra_args=None,
         compile_image_encoder: bool = False,
+        # Prototype encoder for category-guided training
+        prototype_encoder=None,
+        prob_use_prototype=0.0,
+        prob_use_prototype_as_only=0.0,
     ):
         super().__init__()
+
+        # NEW: Store prototype encoder parameters
+        self.prototype_encoder = prototype_encoder
+        self.prob_use_prototype = prob_use_prototype
+        self.prob_use_prototype_as_only = prob_use_prototype_as_only
 
         # Part 1: the image backbone
         self.image_encoder = image_encoder
@@ -261,6 +270,7 @@ class SAM2Base(torch.nn.Module):
         mask_inputs=None,
         high_res_features=None,
         multimask_output=False,
+        prototype_embeddings=None,
     ):
         """
         Forward SAM prompt encoders and mask heads.
@@ -341,6 +351,7 @@ class SAM2Base(torch.nn.Module):
             points=(sam_point_coords, sam_point_labels),
             boxes=None,
             masks=sam_mask_prompt,
+            prototype_embeddings=prototype_embeddings,
         )
         (
             low_res_multimasks,

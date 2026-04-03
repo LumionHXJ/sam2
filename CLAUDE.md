@@ -69,6 +69,8 @@ with torch.inference_mode(), torch.autocast("cuda", dtype=torch.bfloat16):
 
 ## Training
 
+**Important**: The `-c` config path is relative to `configs/` directory (not the project root), because Hydra's config search path is set to `pkg://sam2` which resolves to the `configs/` directory. So use `configs/sam2.1_training/...` instead of `sam2/configs/sam2.1_training/...`.
+
 ### Single GPU Training
 
 ```bash
@@ -103,29 +105,86 @@ This repo contains a custom data pipeline for Oracle Bone Character mask segment
 
 ### Data Format
 
-#### Raw Annotation Format (`data/OBIMD_raw_hj/label_filtered.json`)
+#### Raw Annotation Format (`data/OBIMD_raw_hj/label.json` / `label_filtered.json`)
 
-JSON array with each element representing one image:
+JSON array with each element representing one image. This is the raw annotation format for the Oracle Bone Character dataset.
 
 ```json
 {
-  "Facsimile": "/path/to/facsimile_image.jpg",
-  "Rubbing": "/path/to/rubbing_image.jpg",
-  "RubbingName": "H2",
-  "RecordUtilSentenceGroupVoList": [
+  "Facsimile": "/path/to/facsimile_image.jpg",  // 摩本图像路径
+  "Rubbing": "/path/to/rubbing_image.jpg",      // 拓片图像路径
+  "RubbingName": "H2",                          // 拓片名称标识符
+  "RecordUtilSentenceGroupVoList": [             // 句子组数组
     {
-      "GroupCategory": "InscriptionSentence1",
-      "RecordUtilOracleCharVoList": [
+      "GroupCategory": "InscriptionSentence1",   // 句子组类别
+      "RecordUtilOracleCharVoList": [             // 该组中的甲骨文字符注解
         {
-          "Position": "x,y,w,h",  // Bounding box in x,y,width,height format
-          "OrderNumber": 5,
-          "SeatFont": 0,
-          "Mark": -1,
-          "Label": "character_label",
-          "SubLabel": "sub_character_label"
+          "Position": "x,y,w,h",      // 边界框 (x=左上角x, y=左上角y, w=宽度, h=高度)
+          "OrderNumber": 5,            // 字符在句子中的显示顺序
+          "SeatFont": 0,               // 字体座位信息
+          "Mark": -1,                  // 标记标志 (-1=未标记)
+          "Label": "character_label",   // 字符标签 (未标注时为None). 对应字头 uid，可在 data/镜原数据库/字头图像 找到原型字
+          "SubLabel": "sub_character_label"  // 子标签 (通常与Label相同)
         },
         // ... more characters
       ]
+    }
+  ]
+}
+```
+
+**Label File Variants**:
+- `label.json`: 完整原始注解 (~33.9MB)
+- `label_filtered.json`: 过滤后注解 (移除空边界框, ~30.4MB)
+- `label_filt_train.json`: 训练用过滤版本 (label_filtered.json的子集)
+
+**Usage Example**:
+```python
+from sam2.data_utils.utils import load_raw_annotations
+
+# Load raw annotations from label.json
+data_lookup = load_raw_annotations(
+    "data/OBIMD_raw_hj/label_filtered.json",
+    "data/OBIMD_raw_hj/facsimile",
+    ignore_null=True  # 忽略标签为None的字符
+)
+
+# Access annotations for a specific image
+image_name = "h00002"  # 不包含.jpg扩展名
+oracle_chars = data_lookup[image_name]
+
+# Process each character
+for char in oracle_chars:
+    x, y, w, h = list(map(int, char['Position'].split(',')))
+    label = char['Label']
+    print(f"Character at ({x},{y}) with size {w}x{h}, label: {label}")
+```
+
+#### SA-1B Format
+
+SA-1B format is the intermediate annotation format bridging raw annotations and training-ready formats. Each character is saved as a separate JSON file in the directory structure: `data/OBIMD_iou0.6/SA1B/{image_name}/{char_id}.json`.
+
+```json
+{
+  "image_info": {
+    "image_id": "h00002",
+    "file_name": "/path/to/image.jpg",
+    "height": 1024,
+    "width": 1024
+  },
+  "annotations": [
+    {
+      "id": 0,
+      "area": 12345,
+      "bbox": [x, y, w, h],  // 紧凑边界框 (从mask计算)
+      "segmentation": {
+        "size": [height, width],
+        "counts": "RLE_encoded_string"  // COCO RLE格式
+      },
+      "crop_box": [x, y, w, h],  // 原始裁剪框
+      "Label": "character_label",  // 字符标签
+      "SubLabel": "sub_character_label",  // 子标签
+      "Mark": -1  // 标记标志
     }
   ]
 }
@@ -180,18 +239,67 @@ COCO-style JSON format with SAM predictions:
 
 ### Key Scripts
 
-- `sam2/data_utils/stage1/sam_on_gt_bbox.py`: Uses SAM to generate masks from GT bounding boxes, with multi-GPU support (4 GPUs by default)
-- `sam2/data_utils/stage1/update_dataset.py`: Merge and update dataset between stages
-- `sam2/data_utils/filter_raw_data/to_sa1b_format.py`: Convert raw data to SA-1B format
-- `sam2/data_utils/convert_sa1b_to_yolo.py`: Convert SA-1B format to YOLO format
+#### Root Directory Scripts (`sam2/data_utils/`)
+
+- `yolo_predict.py`: Run YOLO detection on rubbing images to generate bounding box predictions
+- `sam_on_yo_prediction.py`: Generate SAM masks from YOLO box predictions
+- `character_structural_sim.py`: Calculate PSNR and SSIM metrics for character structural similarity
+- `generate_cls_on_gt_bbox.py`: Generate classification dataset using ground truth bounding boxes
+- `sam_on_gt_bbox_hd.py`: Segmentation for HD (high definition) dataset
+- `add_label_to_sa1b.py`: Add character labels to existing SA-1B format files
+- `convert_sa1b_to_yolo.py`: Convert SA-1B format to YOLO format for object detection training
+- `crop_hd_to_test.py`: Crop HD data for testing purposes
+
+#### Filter Raw Data (`sam2/data_utils/filter_raw_data/`)
+
+- `to_sa1b_format.py`: Convert raw label.json annotations to SA-1B format by extracting facsimile masks using character bounding boxes. Handles overlapping character masks using connected component analysis.
+- `filter_empty_box.py`: Clean raw annotations by filtering out empty bounding boxes. Verifies if character masks exist in facsimile images and handles borderline cases with character position shifting.
+
+#### Coldstart Data (`sam2/data_utils/coldstart/`)
+
+- `arrange_coldstart_data.py`: Prepare cold-start dataset by organizing data for few-shot or zero-shot scenarios
+- `generate_align_data_by_shift.py`: Align masks using shift optimization to improve mask-to-image correspondence
+
+#### Stage 1 Processing (`sam2/data_utils/stage1/`)
+
+- `sam_on_gt_bbox.py`: Uses SAM model to generate masks from ground truth bounding boxes in label.json format. Processes images in parallel across GPUs (4 GPUs by default). Generates COCO-style annotations with predicted masks.
+- `update_dataset.py`: Merge and update dataset between different stages of the data processing pipeline
+
+#### SAM Processing (`sam2/data_utils/sam/`)
+
+- `sam_self_iterate.py`: Self-iterative SAM refinement - iteratively improve mask predictions
+- `update_dataset.py`: Filter SAM-generated dataset to remove low-quality predictions
 
 ### Data Utils Functions
 
 Key functions in `sam2/data_utils/utils.py`:
-- `get_tight_box(mask)`: Get tight bounding box from mask (returns x,y,w,h)
-- `calculate_stability_score(masks)`: Calculate SAM stability score
+
+#### Bounding Box Operations
+- `get_tight_box(mask)`: Get tight bounding box from binary mask (returns x,y,w,h)
 - `calc_box_iou(box1, box2)`: Calculate IoU between two bounding boxes
+- `calc_box_isin(box1, box2)`: Check if box1 is inside box2
+- `calc_box_area(box)`: Calculate area of a bounding box
+
+#### Mask Operations
+- `calculate_stability_score(masks)`: Calculate SAM stability score for masks
 - `calc_mask_coverage(mask1, mask2)`: Calculate pixel coverage of mask1 by mask2
+- `calc_mask_iou(mask1, mask2)`: Calculate IoU between two masks
+- `combine_masks(mask_list)`: Combine multiple masks using logical OR
+
+#### Data Loading
+- `load_raw_annotations(data_path, segmap_root, ignore=False)`: Load raw annotations from label.json format, returns dictionary mapping image name to list of oracle characters
+- `load_null_annotations(data_path)`: Load only characters with None labels from label.json
+
+#### Dataset Processing
+- `filter_training_dataset(dataset_path, threshold=0.6)`: Filter dataset based on predicted_iou threshold
+- `update_training_dataset(old_dataset, new_dataset, overlap_mode)`: Merge and update training datasets between stages
+
+#### Image Processing
+- `rotate_image(image, angle)`: Rotate image by specified angle
+- `extract_connected_component_opencv(mask)`: Extract connected components from binary mask using OpenCV
+
+#### Evaluation
+- `calculate_mask_ap(pred_masks, gt_masks, iou_thresholds)`: Calculate Average Precision for mask predictions
 
 ## YOLO Integration
 

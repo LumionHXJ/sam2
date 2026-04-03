@@ -58,6 +58,10 @@ class RandomUniformSampler(VOSSampler):
             if isinstance(loaded_segms, LazySegments):
                 # LazySegments for SA1BRawDataset
                 visible_object_ids = list(loaded_segms.keys())
+            elif isinstance(loaded_segms, tuple):
+                # SA1BSegmentLoader returns (segments, labels) tuple
+                segments, labels = loaded_segms
+                visible_object_ids = list(segments.keys())
             else:
                 for object_id, segment in segment_loader.load(
                     frames[0].frame_idx

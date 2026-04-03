@@ -243,7 +243,7 @@ class LazySegments:
 
     def __getitem__(self, key):
         if key in self.cache:
-            return self.cache[key] 
+            return self.cache[key]
         rle = self.segments[key]
         mask = torch.from_numpy(mask_utils.decode([rle])).permute(2, 0, 1)[0]
         self.cache[key] = mask
@@ -278,7 +278,8 @@ class SA1BSegmentLoader:
         self.frame_annots = self.frame_annots["annotations"]
 
         rle_masks = []
-        for frame_annot in self.frame_annots:
+        self.labels = {}  # Store labels for each annotation
+        for i, frame_annot in enumerate(self.frame_annots):
             if not frame_annot["area"] > 0:
                 continue
             if ("uncertain_iou" in frame_annot) and (
@@ -292,10 +293,15 @@ class SA1BSegmentLoader:
             ):
                 continue
             rle_masks.append(frame_annot["segmentation"])
+            # Store label information
+            self.labels[len(rle_masks) - 1] = {
+                "Label": frame_annot.get("Label", None),
+                "SubLabel": frame_annot.get("SubLabel", None)
+            }
 
         self.segments = LazySegments()
         for i, rle in enumerate(rle_masks):
             self.segments[i] = rle
 
     def load(self, frame_idx):
-        return self.segments
+        return self.segments, self.labels

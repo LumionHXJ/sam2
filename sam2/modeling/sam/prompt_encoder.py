@@ -162,6 +162,7 @@ class PromptEncoder(nn.Module):
         points: Optional[Tuple[torch.Tensor, torch.Tensor]],
         boxes: Optional[torch.Tensor],
         masks: Optional[torch.Tensor],
+        prototype_embeddings: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Embeds different types of prompts, returning both sparse and dense
@@ -172,6 +173,8 @@ class PromptEncoder(nn.Module):
             and labels to embed.
           boxes (torch.Tensor or none): boxes to embed
           masks (torch.Tensor or none): masks to embed
+          prototype_embeddings (torch.Tensor or none): prototype character embeddings
+            with shape [B, N, embed_dim] where N is number of prototypes.
 
         Returns:
           torch.Tensor: sparse embeddings for the points and boxes, with shape
@@ -186,11 +189,15 @@ class PromptEncoder(nn.Module):
         )
         if points is not None:
             coords, labels = points
-            point_embeddings = self._embed_points(coords, labels, pad=(boxes is None))
-            sparse_embeddings = torch.cat([sparse_embeddings, point_embeddings], dim=1)
+            point = self._embed_points(coords, labels, pad=(boxes is None))
+            sparse_embeddings = torch.cat([sparse_embeddings, point], dim=1)
         if boxes is not None:
             box_embeddings = self._embed_boxes(boxes)
             sparse_embeddings = torch.cat([sparse_embeddings, box_embeddings], dim=1)
+
+        # NEW: Concatenate prototype embeddings
+        if prototype_embeddings is not None:
+            sparse_embeddings = torch.cat([sparse_embeddings, prototype_embeddings], dim=1)
 
         if masks is not None:
             dense_embeddings = self._embed_masks(masks)
