@@ -1,7 +1,7 @@
 # @package _global_
 scratch:
   resolution: 1024
-  train_batch_size: 2
+  train_batch_size: 4
   num_train_workers: 4
   num_frames: 1
   max_num_objects: 4
@@ -216,8 +216,8 @@ trainer:
     # box/point input and corrections
     prob_to_use_pt_input_for_train: 0.0 # 图像默认1.0（这一项留给视频用）
     prob_to_use_pt_input_for_eval: 0.0
-    prob_to_use_prompt_input_for_train: 0.75
-    prob_to_use_prompt_input_for_eval: 1.0
+    prob_to_use_prompt_input_for_train: 0.0
+    prob_to_use_prompt_input_for_eval: 0.0
     prob_to_use_box_input_for_train: 0.75 # 0.5*0.5 = 0.25 prob to use box instead of points
     prob_to_use_box_input_for_eval: 0.0
     prob_to_sample_from_gt_for_train: 0.1 # with a small prob, sampling correction points from GT mask instead of prediction errors
@@ -235,21 +235,22 @@ trainer:
     forward_backbone_per_frame_for_eval: True
     sam_mask_decoder_extra_args:
       use_highres_output: true
+      num_multimask_outputs: 3
 
     ### Prototype Training Parameters ###
     # Path to prototype character images (字头)
     prototype_root: data/镜原数据库/字头图像
     # Probability of using prototype prompts
-    prob_use_prototype_for_train: 0.5
-    prob_use_prototype_for_eval: 0.0
+    prob_use_prototype_for_train: 1.0
+    prob_use_prototype_for_eval: 1.0
     # When using prototypes, probability of using ONLY prototypes (no traditional prompts)
-    prob_use_prototype_as_only_for_train: 0.3
-    prob_use_prototype_as_only_for_eval: 0.0
+    prob_use_prototype_as_only_for_train: 1.0
+    prob_use_prototype_as_only_for_eval: 1.0
     # Probability of using negative sampling (background points)
-    prob_negative_sample_for_train: 0.1
+    prob_negative_sample_for_train: 0.0
     prob_negative_sample_for_eval: 0.0
     # Probability of using negative prototype sampling
-    prob_negative_prototype_for_train: 0.2
+    prob_negative_prototype_for_train: 0.0
     prob_negative_prototype_for_eval: 0.0
 
   data:
@@ -303,18 +304,6 @@ trainer:
         overrides:
           - pattern: '*pos_embed*'
             value: 1.0
-
-      # Lower learning rate for prototype encoder backbone
-      # Normal learning rate for prototype encoder projection layer
-      - _target_: training.optimizer.layer_decay_param_modifier
-        _partial_: true
-        layer_decay_value: 0.95
-        apply_to: 'prototype_encoder'
-        overrides:
-          - pattern: '*backbone*'
-            value: 0.003  # 3e-6, much lower than base lr
-          - pattern: '*proj*'
-            value: 0.01  # 1e-2, same as vision_lr
 
     options:
       lr:

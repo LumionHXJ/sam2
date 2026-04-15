@@ -211,7 +211,6 @@ class MaskDecoder(nn.Module):
             sparse_prompt_embeddings.size(0), -1, -1
         )
         tokens = torch.cat((output_tokens, sparse_prompt_embeddings), dim=1)
-
         # Expand per-image data in batch direction to be per-mask
         if repeat_image:
             src = torch.repeat_interleave(image_embeddings, tokens.shape[0], dim=0)

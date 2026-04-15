@@ -1029,6 +1029,38 @@ class Trainer:
             self.optim_conf.options,
             self.optim_conf.param_group_modifiers,
         )
+        self._log_param_lrs()
+
+    def _log_param_lrs(self):
+        """Log the learning rate for each parameter in the model."""
+        if self.distributed_rank != 0:
+            return  # Only log on rank 0
+
+        logging.info("=" * 50)
+        logging.info("Parameter Learning Rates:")
+        logging.info("=" * 50)
+
+        # Build a mapping from parameter to its param group index
+        param_to_group = {}
+        for group_idx, param_group in enumerate(self.optim.optimizer.param_groups):
+            for param in param_group['params']:
+                param_to_group[param] = group_idx
+
+        # Log each parameter with its learning rate
+        for name, param in unwrap_ddp_if_wrapped(self.model).named_parameters():
+            if param in param_to_group:
+                group_idx = param_to_group[param]
+                lr = self.optim.optimizer.param_groups[group_idx]['lr']
+                logging.info(f"  {name}: {lr:.6e} (group {group_idx})")
+            else:
+                logging.info(f"  {name}: NO_LR (not in optimizer)")
+
+        logging.info("=" * 50)
+        logging.info(f"Total param groups: {len(self.optim.optimizer.param_groups)}")
+        for i, param_group in enumerate(self.optim.optimizer.param_groups):
+            logging.info(f"  Group {i}: lr={param_group['lr']:.6e}, "
+                       f"n_params={len(param_group['params'])}")
+        logging.info("=" * 50)
 
     def _log_loss_detailed_and_return_core_loss(self, loss, loss_str, step):
         core_loss = loss.pop(CORE_LOSS_KEY)

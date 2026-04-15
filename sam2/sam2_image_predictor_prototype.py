@@ -13,9 +13,232 @@ import torch
 from PIL import Image as PILImage
 from torchvision import transforms
 
+from functools import wraps
+from typing import Callable
+
 from sam2.modeling.backbones.prototype_encoder import PrototypeEncoder
 from sam2.modeling.sam2_base import SAM2Base
 from sam2.utils.transforms import SAM2Transforms
+
+
+def _is_prototype_only_prompt(args, kwargs):
+    """Check if only prototype_uids is provided as prompt (other prompts are None)."""
+    # Check point_coords
+    point_coords = kwargs.get("point_coords", None)
+    if point_coords is None and len(args) > 0:
+        point_coords = args[0]
+    if point_coords is not None:
+        return False
+
+    # Check point_labels
+    point_labels = kwargs.get("point_labels", None)
+    if point_labels is None and len(args) > 1:
+        point_labels = args[1]
+    if point_labels is not None:
+        return False
+
+    # Check box
+    box = kwargs.get("box", None)
+    if box is None and len(args) > 2:
+        box = args[2]
+    if box is not None:
+        return False
+
+    # Check mask_input
+    mask_input = kwargs.get("mask_input", None)
+    if mask_input is None and len(args) > 3:
+        mask_input = args[3]
+    if mask_input is not None:
+        return False
+
+    return True
+
+
+def _create_zero_results(orig_hw, num_none, multimask_output=True, logits_shape=None):
+        """Create zero masks, scores, and logits for None prototype entries."""
+        h, w = orig_hw
+        # Zero mask with shape (num_none, H, W) or (num_none, 3, H, W)
+        if multimask_output:
+            zero_masks = np.zeros((num_none, 3, h, w), dtype=np.float32)
+            zero_scores = np.zeros((num_none, 3), dtype=np.float32)
+            if logits_shape is not None:
+                zero_logits = np.zeros((num_none, 3, logits_shape[0], logits_shape[1]), dtype=np.float32)
+            else:
+                zero_logits = np.zeros((num_none, 3, 256, 256), dtype=np.float32)
+        else:
+            zero_masks = np.zeros((num_none, h, w), dtype=np.float32)
+            zero_scores = np.zeros((num_none,), dtype=np.float32)
+            if logits_shape is not None:
+                zero_logits = np.zeros((num_none, logits_shape[0], logits_shape[1]), dtype=np.float32)
+            else:
+                zero_logits = np.zeros((num_none, 256, 256), dtype=np.float32)
+        return zero_masks, zero_scores, zero_logits
+
+
+def handle_none_prototypes(method: Callable):
+    """Decorator to handle None values in prototype_uids by splitting and merging results."""
+    @wraps(method)
+    def wrapper(self, *args, **kwargs):
+        # Get prototype_uids from kwargs or args based on method name
+        prototype_uids = None
+        if method.__name__ == "predict":
+            prototype_uids = kwargs.get("prototype_uids", None)
+            if prototype_uids is None and len(args) > 8:
+                prototype_uids = args[8]
+        elif method.__name__ == "_predict_single":
+            prototype_uids = kwargs.get("prototype_uids", None)
+
+        if prototype_uids is None or not any(uid is None for uid in prototype_uids):
+            return method(self, *args, **kwargs)
+
+        # Split inputs by prototype_uids
+        has_proto_indices = [i for i, uid in enumerate(prototype_uids) if uid is not None]
+        none_indices = [i for i, uid in enumerate(prototype_uids) if uid is None]
+
+        # Determine if inputs are batched
+        is_batched = _is_batched_input(args, kwargs, len(prototype_uids))
+
+        # Check if only prototype is provided as prompt
+        proto_only = _is_prototype_only_prompt(args, kwargs)
+
+        # Get multimask_output parameter
+        multimask_output = kwargs.get("multimask_output", True)
+        if method.__name__ == "predict" and len(args) > 4:
+            multimask_output = args[4]
+        elif method.__name__ == "_predict_single" and len(args) > 4:
+            multimask_output = args[4]
+
+        # Prepare results container
+        results = {i: None for i in range(len(prototype_uids))}
+        reference_logits_shape = None
+
+        # Handle has_proto part
+        if has_proto_indices:
+            split_args, split_kwargs = _split_predict_inputs(
+                args, kwargs, has_proto_indices, is_batched, prototype_uids
+            )
+
+            masks, scores, logits = method(self, *split_args, **split_kwargs)
+
+            # Store logits shape for creating zero results
+            reference_logits_shape = logits.shape[-2:]
+
+            for i, idx in enumerate(has_proto_indices):
+                results[idx] = (masks[i:i+1], scores[i:i+1], logits[i:i+1])
+
+        # Handle None part
+        if none_indices:
+            if proto_only:
+                # If only prototype is provided, return zero masks directly
+                img_idx = kwargs.get("img_idx", -1)
+                if img_idx == -1:
+                    # Use first image in batch mode or single image mode
+                    orig_hw = self._orig_hw[0] if len(self._orig_hw) > 0 else (256, 256)
+                else:
+                    orig_hw = self._orig_hw[img_idx]
+
+                # If no valid prototypes, we need to call model once to get logits shape
+                if reference_logits_shape is None:
+                    # Call model with prototype_uids set to None to get reference shape
+                    temp_kwargs = kwargs.copy()
+                    temp_kwargs["prototype_uids"] = None
+                    _, _, ref_logits = method(self, *args, **temp_kwargs)
+                    reference_logits_shape = ref_logits.shape[-2:]
+
+                zero_masks, zero_scores, zero_logits = _create_zero_results(
+                    orig_hw, len(none_indices), multimask_output, reference_logits_shape
+                )
+                for i, idx in enumerate(none_indices):
+                    results[idx] = (zero_masks[i:i+1], zero_scores[i:i+1], zero_logits[i:i+1])
+            else:
+                # Original behavior: call model for None entries
+                split_args, split_kwargs = _split_predict_inputs(
+                    args, kwargs, none_indices, is_batched, prototype_uids
+                )
+
+                # Set prototype_uids to None
+                if len(split_args) > 8:
+                    split_args = list(split_args)
+                    if method.__name__ == "predict":
+                        split_args[8] = None
+                    else:
+                        split_kwargs["prototype_uids"] = None
+                else:
+                    split_kwargs["prototype_uids"] = None
+
+                masks, scores, logits = method(self, *split_args, **split_kwargs)
+
+                for i, idx in enumerate(none_indices):
+                    results[idx] = (masks[i:i+1], scores[i:i+1], logits[i:i+1])
+
+        # Merge results in original order
+        all_masks = np.concatenate([
+            results[i][0][None, ...] if results[i][0].ndim == 3 else results[i][0]
+            for i in range(len(prototype_uids))
+        ], axis=0)
+        all_scores = np.concatenate([
+            results[i][1][None, ...] if results[i][1].ndim == 1 else results[i][1]
+            for i in range(len(prototype_uids))
+        ], axis=0)
+        all_logits = np.concatenate([
+            results[i][2][None, ...] if results[i][2].ndim == 3 else results[i][2]
+            for i in range(len(prototype_uids))
+        ], axis=0)
+
+        return all_masks, all_scores, all_logits
+
+    return wrapper
+
+
+def _is_batched_input(args, kwargs, num_protos):
+    """Check if inputs are batched based on box or point_coords shape."""
+    # Check box
+    box = kwargs.get("box", None)
+    if box is None and len(args) > 2:
+        box = args[2]
+    if box is not None and len(box.shape) > 1 and box.shape[0] == num_protos:
+        return True
+
+    # Check point_coords
+    point_coords = kwargs.get("point_coords", None)
+    if point_coords is None and len(args) > 0:
+        point_coords = args[0]
+    if point_coords is not None and len(point_coords.shape) > 1 and point_coords.shape[0] == num_protos:
+        return True
+
+    return False
+
+
+def _split_predict_inputs(args, kwargs, indices, is_batched, prototype_uids):
+    """Split predict method inputs by indices."""
+    new_args = list(args)
+    new_kwargs = kwargs.copy()
+
+    if is_batched:
+        # point_coords, point_labels, box, mask_input
+        for arg_name, arg_idx in [("point_coords", 0), ("point_labels", 1), ("box", 2), ("mask_input", 3)]:
+            val = kwargs.get(arg_name, None)
+            if val is None and len(args) > arg_idx:
+                val = args[arg_idx]
+            if val is not None:
+                # mask_input special case: don't slice if it's single mask
+                if arg_name == "mask_input" and len(val.shape) <= 2:
+                    continue
+                sliced = val[indices]
+                if arg_name in kwargs:
+                    new_kwargs[arg_name] = sliced
+                else:
+                    new_args[arg_idx] = sliced
+    # Keep single inputs as-is
+
+    # Update prototype_uids
+    has_proto_uids = [prototype_uids[i] for i in indices]
+    if len(args) > 8:
+        new_args[8] = has_proto_uids
+    else:
+        new_kwargs["prototype_uids"] = has_proto_uids
+
+    return tuple(new_args), new_kwargs
 
 
 class PrototypeLoader:
@@ -288,6 +511,7 @@ class SAM2ImagePredictorWithPrototype:
         self._is_batch = True
         logging.info("Image embeddings computed.")
 
+    @handle_none_prototypes
     def predict(
         self,
         point_coords: Optional[np.ndarray] = None,
@@ -325,7 +549,7 @@ class SAM2ImagePredictorWithPrototype:
             to the range [0,1] and point_coords is expected to be wrt. image dimensions.
           prototype_uids (list of str or None): A list of prototype character UIDs.
             Can be used independently or together with box prompts. None values in the
-            list are filtered out.
+            list are automatically handled by the decorator.
 
         Returns:
           (np.ndarray): The output masks in CxHxW format, where C is the
@@ -340,9 +564,6 @@ class SAM2ImagePredictorWithPrototype:
             raise RuntimeError(
                 "An image must be set with .set_image(...) before mask prediction."
             )
-
-        # Note: prototype_uids can now be used independently
-        # No box requirement validation needed
 
         # Transform input prompts
         mask_input, unnorm_coords, labels, unnorm_box = self._prep_prompts(
@@ -499,40 +720,69 @@ class SAM2ImagePredictorWithPrototype:
                 prototype_uids_batch[img_idx] if prototype_uids_batch is not None else None
             )
 
-            mask_input, unnorm_coords, labels, unnorm_box = self._prep_prompts(
-                point_coords,
-                point_labels,
-                box,
-                mask_input,
-                normalize_coords,
-                img_idx=img_idx,
-            )
-
-            # Load and encode prototypes if provided
-            prototype_embeddings = None
-            if prototype_uids is not None:
-                prototype_embeddings = self._load_and_encode_prototypes(prototype_uids)
-
-            masks, iou_predictions, low_res_masks = self._predict(
-                unnorm_coords,
-                labels,
-                unnorm_box,
-                mask_input,
-                multimask_output,
+            # Predict for single image (decorator handles None values)
+            masks_np, iou_predictions_np, low_res_masks_np = self._predict_single(
+                point_coords=point_coords,
+                point_labels=point_labels,
+                box=box,
+                mask_input=mask_input,
+                multimask_output=multimask_output,
                 return_logits=return_logits,
+                normalize_coords=normalize_coords,
+                prototype_uids=prototype_uids,
                 img_idx=img_idx,
-                prototype_embeddings=prototype_embeddings,
             )
-            masks_np = masks.squeeze(0).float().detach().cpu().numpy()
-            iou_predictions_np = (
-                iou_predictions.squeeze(0).float().detach().cpu().numpy()
-            )
-            low_res_masks_np = low_res_masks.squeeze(0).float().detach().cpu().numpy()
+
             all_masks.append(masks_np)
             all_ious.append(iou_predictions_np)
             all_low_res_masks.append(low_res_masks_np)
 
         return all_masks, all_ious, all_low_res_masks
+
+    @handle_none_prototypes
+    def _predict_single(
+        self,
+        point_coords: Optional[np.ndarray] = None,
+        point_labels: Optional[np.ndarray] = None,
+        box: Optional[np.ndarray] = None,
+        mask_input: Optional[np.ndarray] = None,
+        multimask_output: bool = True,
+        return_logits: bool = False,
+        normalize_coords=True,
+        prototype_uids: Optional[List[Optional[str]]] = None,
+        img_idx: int = -1,
+    ) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Predict for a single image with optional prototype_uids.
+
+        This method is used by predict_batch() for each image in the batch.
+        The decorator @handle_none_prototypes handles None values in prototype_uids.
+        """
+        # Transform input prompts
+        mask_input, unnorm_coords, labels, unnorm_box = self._prep_prompts(
+            point_coords, point_labels, box, mask_input, normalize_coords, img_idx
+        )
+
+        # Load and encode prototypes if provided
+        prototype_embeddings = None
+        if prototype_uids is not None:
+            prototype_embeddings = self._load_and_encode_prototypes(prototype_uids)
+
+        masks, iou_predictions, low_res_masks = self._predict(
+            unnorm_coords,
+            labels,
+            unnorm_box,
+            mask_input,
+            multimask_output,
+            return_logits=return_logits,
+            img_idx=img_idx,
+            prototype_embeddings=prototype_embeddings,
+        )
+
+        masks_np = masks.squeeze(0).float().detach().cpu().numpy()
+        iou_predictions_np = iou_predictions.squeeze(0).float().detach().cpu().numpy()
+        low_res_masks_np = low_res_masks.squeeze(0).float().detach().cpu().numpy()
+        return masks_np, iou_predictions_np, low_res_masks_np
 
     def _prep_prompts(
         self, point_coords, point_labels, box, mask_logits, normalize_coords, img_idx=-1
@@ -603,7 +853,8 @@ class SAM2ImagePredictorWithPrototype:
             instead of a binary mask.
           img_idx (int): Index of the image in batch mode.
           prototype_embeddings (torch.Tensor or None): Prototype character embeddings
-            with shape [B, N, embed_dim] where N is number of prototypes.
+            with shape [B, N, 196, 256] where N is number of prototypes and 196 spatial tokens
+            preserve the 14x14 patch structure.
 
         Returns:
           (torch.Tensor): The output masks in BxCxHxW format, where C is the
@@ -647,7 +898,7 @@ class SAM2ImagePredictorWithPrototype:
 
         # Predict masks
         batched_mode = (
-            concat_points is not None and concat_points[0].shape[0] > 1
+            sparse_embeddings is not None and sparse_embeddings.shape[0] > 1
         )  # multi object prediction
         high_res_features = [
             feat_level[img_idx].unsqueeze(0)
@@ -680,42 +931,29 @@ class SAM2ImagePredictorWithPrototype:
         """Load and encode prototype images.
 
         Args:
-            uids: List of prototype character UIDs (may contain None).
+            uids: List of prototype character UIDs. Note: All UIDs are guaranteed
+                to be valid (non-None) when this method is called, as the
+                @handle_none_prototypes decorator handles filtering None values.
 
         Returns:
-            torch.Tensor: Prototype embeddings with shape [1, N, embed_dim],
-                where N is the total number of input UIDs (including None values).
-                None positions are filled with learnable mask embeddings.
+            torch.Tensor: Prototype embeddings with shape [N, 196, 256],
+                where N is the number of valid input UIDs. The 196 spatial tokens
+                preserve the 14x14 patch structure from the encoder.
                 Returns None if no valid prototypes found.
         """
-        # Load prototype images (filters None labels)
-        prototype_images, valid_indices = self.prototype_loader.load_prototypes(uids)
+        # Load prototype images
+        prototype_images, _ = self.prototype_loader.load_prototypes(uids)
 
         if prototype_images is None:
             return None
 
         prototype_images = prototype_images.to(self.device)
 
-        # Encode prototypes
+        # Encode prototypes - returns [N, 196, 256]
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
-            valid_embeddings = self.prototype_encoder(prototype_images)  # [N_valid, embed_dim]
+            prototype_embeddings = self.prototype_encoder(prototype_images)
 
-        # Initialize full batch with learnable mask embeddings for None positions
-        num_total = len(uids)
-        embed_dim = valid_embeddings.shape[1]
-        device = valid_embeddings.device
-
-        # Use learnable mask embeddings from prompt encoder for None positions
-        mask_embedding = self.model.sam_prompt_encoder.no_mask_embed.weight.squeeze(0)  # [embed_dim]
-
-        # Create full batch embeddings with [1, N_total, embed_dim]
-        # Initialize with mask_embedding for all positions
-        full_embeddings = mask_embedding.unsqueeze(0).unsqueeze(0).repeat(1, num_total, 1)
-        # Fill valid positions with encoded prototypes
-        for i, valid_idx in enumerate(valid_indices):
-            full_embeddings[0, valid_idx] = valid_embeddings[i]
-
-        return full_embeddings
+        return prototype_embeddings  # [N, 196, 256]
 
     def get_image_embedding(self) -> torch.Tensor:
         """

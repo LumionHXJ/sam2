@@ -230,7 +230,6 @@ class SAM2Base(torch.nn.Module):
             mask_in_chans=16,
         )
         self.sam_mask_decoder = MaskDecoder(
-            num_multimask_outputs=3,
             transformer=TwoWayTransformer(
                 depth=2,
                 embedding_dim=self.sam_prompt_embed_dim,
@@ -322,10 +321,10 @@ class SAM2Base(torch.nn.Module):
             sam_point_coords = point_inputs["point_coords"]
             sam_point_labels = point_inputs["point_labels"]
             assert sam_point_coords.size(0) == B and sam_point_labels.size(0) == B
+            points_for_prompt_encoder = (sam_point_coords, sam_point_labels)
         else:
             # If no points are provide, pad with an empty point (with label -1)
-            sam_point_coords = torch.zeros(B, 1, 2, device=device)
-            sam_point_labels = -torch.ones(B, 1, dtype=torch.int32, device=device)
+            points_for_prompt_encoder = None
 
         # b) Handle mask prompts
         if mask_inputs is not None:
@@ -348,7 +347,7 @@ class SAM2Base(torch.nn.Module):
             sam_mask_prompt = None
 
         sparse_embeddings, dense_embeddings = self.sam_prompt_encoder(
-            points=(sam_point_coords, sam_point_labels),
+            points=points_for_prompt_encoder,
             boxes=None,
             masks=sam_mask_prompt,
             prototype_embeddings=prototype_embeddings,
@@ -749,6 +748,7 @@ class SAM2Base(torch.nn.Module):
         num_frames,
         track_in_reverse,
         prev_sam_mask_logits,
+        prototype_embeddings=None,
     ):
         current_out = {"point_inputs": point_inputs, "mask_inputs": mask_inputs}
         # High-resolution feature maps for the SAM head, reshape (HW)BC => BCHW
@@ -793,6 +793,7 @@ class SAM2Base(torch.nn.Module):
                 mask_inputs=mask_inputs,
                 high_res_features=high_res_features,
                 multimask_output=multimask_output,
+                prototype_embeddings=prototype_embeddings,
             )
 
         return current_out, sam_outputs, high_res_features, pix_feat

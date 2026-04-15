@@ -68,6 +68,7 @@ def add_label_to_sa1b_json(json_dir, label_json_path):
                 annotation['SubLabel'] = None
                 annotation['Mark'] = None
                 unmatched_count += 1
+                print(f"未匹配: {image_name} 的 crop_box {crop_box} 在 label.json 中未找到对应信息")
 
         # 保存更新后的 JSON
         with open(json_path, 'w') as f:
@@ -81,6 +82,6 @@ def add_label_to_sa1b_json(json_dir, label_json_path):
     print(f"未匹配: {unmatched_count} 个")
 
 if __name__ == "__main__":
-    json_dir = "data/OBIMD_iou0.6/stage3/facsimile_json"
+    json_dir = "data/OBIMD_test100/facsimile_json"
     label_json_path = "data/OBIMD_raw_hj/label_proc.json"
     add_label_to_sa1b_json(json_dir, label_json_path)

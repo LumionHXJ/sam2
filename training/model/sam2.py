@@ -277,20 +277,20 @@ class SAM2Train(SAM2Base):
             else:
                 use_prototype = True
 
-        # Check if prototypes are available (non-None labels)
-        # If all labels are None, force fallback to classic box/point prompts
-        has_valid_labels = False
+        # Check if prototypes are available (all non-None labels)
+        # If any label is None, force fallback to classic box/point prompts
+        all_valid_labels = True
         if use_prototype and hasattr(input, "labels") and input.labels is not None:
-            # Check if any frame has valid (non-None) labels
+            # Check if all frames have valid (non-None) labels
             for frame_labels in input.labels:
-                if frame_labels:  # if frame has any labels
-                    if any(label is not None for label in frame_labels):
-                        has_valid_labels = True
-                        break
+                if frame_labels and any(label is None for label in frame_labels):
+                    all_valid_labels = False
+                    break
 
-        # If no valid labels available, force fallback to classic prompts
-        if use_prototype and not has_valid_labels:
+        # If any label is None, force fallback to classic prompts
+        if not all_valid_labels:
             use_prototype = False
+            use_prompt_input = True
 
         # Store sampling decisions
         backbone_out["use_prototype"] = use_prototype
@@ -338,7 +338,7 @@ class SAM2Train(SAM2Base):
                     # Use negative prototypes instead of positive ones
                     # Determine number of negatives (1:1 or fewer)
                     valid_labels = [l for l in frame_labels if l is not None]
-                    num_negatives = min(len(valid_labels), self.rng.integers(0, len(valid_labels) + 1, endpoint=True))
+                    num_negatives = len(valid_labels)
                     if num_negatives > 0:
                         # Sample negative prototypes
                         negative_labels = self._sample_negative_prototypes(frame_labels, num_negatives)
@@ -418,7 +418,21 @@ class SAM2Train(SAM2Base):
 
         # Sample frames where we will add correction clicks on the fly
         # based on the error between prediction and ground-truth masks
-        if not use_prompt_input or not use_pt_input:
+        if use_prototype:
+            # Allow iterative correction when using prototype as alternative prompt
+            if num_frames_to_correct == num_init_cond_frames:
+                frames_to_add_correction_pt = init_cond_frames
+            else:
+                assert num_frames_to_correct > num_init_cond_frames
+                # initial cond frame + randomly selected remaining frames (without replacement)
+                extra_num = num_frames_to_correct - num_init_cond_frames
+                frames_to_add_correction_pt = (
+                    init_cond_frames
+                    + self.rng.choice(
+                        backbone_out["frames_not_in_init_cond"], extra_num, replace=False
+                    ).tolist()
+                )
+        elif not use_prompt_input or not use_pt_input:
             # no correction points will be sampled when using mask inputs
             frames_to_add_correction_pt = []
         elif num_frames_to_correct == num_init_cond_frames:
@@ -434,7 +448,6 @@ class SAM2Train(SAM2Base):
                 ).tolist()
             )
         backbone_out["frames_to_add_correction_pt"] = frames_to_add_correction_pt
-
         return backbone_out
 
     def _prepare_prototype_batch(self, labels, device):
@@ -457,8 +470,7 @@ class SAM2Train(SAM2Base):
         prototype_imgs = prototype_imgs.to(device)
 
         # Encode prototypes into spatial tokens
-        with torch.no_grad():
-            spatial_embeddings = self.prototype_encoder(prototype_imgs)  # [B, 196, 256]
+        spatial_embeddings = self.prototype_encoder(prototype_imgs)  # [B, 196, 256]
 
         return spatial_embeddings  # [B, 196, 256]
 
@@ -656,6 +668,7 @@ class SAM2Train(SAM2Base):
                 point_inputs=backbone_out["point_inputs_per_frame"].get(stage_id, None),
                 mask_inputs=backbone_out["mask_inputs_per_frame"].get(stage_id, None),
                 gt_masks=backbone_out["gt_masks_per_frame"].get(stage_id, None),
+                prototype_embeddings=backbone_out["prototype_embeddings_per_frame"].get(stage_id, None),
                 frames_to_add_correction_pt=frames_to_add_correction_pt,
                 output_dict=output_dict,
                 num_frames=num_frames,
@@ -700,6 +713,7 @@ class SAM2Train(SAM2Base):
         prev_sam_mask_logits=None,  # The previously predicted SAM mask logits.
         frames_to_add_correction_pt=None,
         gt_masks=None,
+        prototype_embeddings=None,
     ):
         if frames_to_add_correction_pt is None:
             frames_to_add_correction_pt = []
@@ -715,6 +729,7 @@ class SAM2Train(SAM2Base):
             num_frames,
             track_in_reverse,
             prev_sam_mask_logits,
+            prototype_embeddings=prototype_embeddings,
         )
 
         (
@@ -735,7 +750,7 @@ class SAM2Train(SAM2Base):
         current_out["multistep_point_inputs"] = [point_inputs]
         current_out["multistep_object_score_logits"] = [object_score_logits]
 
-        # Optionally, sample correction points iteratively to correct the mask
+        # Optionally, sample correction points to correct the mask
         if frame_idx in frames_to_add_correction_pt:
             point_inputs, final_sam_outputs = self._iter_correct_pt_sampling(
                 is_init_cond_frame,
@@ -750,6 +765,7 @@ class SAM2Train(SAM2Base):
                 high_res_masks,
                 object_score_logits,
                 current_out,
+                prototype_embeddings=prototype_embeddings,
             )
             (
                 _,
@@ -793,6 +809,7 @@ class SAM2Train(SAM2Base):
         high_res_masks,
         object_score_logits,
         current_out,
+        prototype_embeddings=None,
     ):
 
         assert gt_masks is not None
@@ -833,6 +850,7 @@ class SAM2Train(SAM2Base):
                     mask_inputs=mask_inputs,
                     high_res_features=high_res_features,
                     multimask_output=multimask_output,
+                    prototype_embeddings=prototype_embeddings,
                     use_reentrant=False,
                 )
             else:
@@ -842,6 +860,7 @@ class SAM2Train(SAM2Base):
                     mask_inputs=mask_inputs,
                     high_res_features=high_res_features,
                     multimask_output=multimask_output,
+                    prototype_embeddings=prototype_embeddings,
                 )
             (
                 low_res_multimasks,

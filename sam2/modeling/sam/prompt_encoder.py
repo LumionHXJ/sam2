@@ -142,6 +142,7 @@ class PromptEncoder(nn.Module):
         points: Optional[Tuple[torch.Tensor, torch.Tensor]],
         boxes: Optional[torch.Tensor],
         masks: Optional[torch.Tensor],
+        prototype_embeddings: Optional[torch.Tensor] = None,
     ) -> int:
         """
         Gets the batch size of the output given the batch size of the input prompts.
@@ -152,6 +153,8 @@ class PromptEncoder(nn.Module):
             return boxes.shape[0]
         elif masks is not None:
             return masks.shape[0]
+        elif prototype_embeddings is not None:
+            return prototype_embeddings.shape[0]
         else:
             return 1
 
@@ -184,7 +187,7 @@ class PromptEncoder(nn.Module):
           torch.Tensor: dense embeddings for the masks, in the shape
             Bx(embed_dim)x(embed_H)x(embed_W)
         """
-        bs = self._get_batch_size(points, boxes, masks)
+        bs = self._get_batch_size(points, boxes, masks, prototype_embeddings)
         sparse_embeddings = torch.empty(
             (bs, 0, self.embed_dim), device=self._get_device()
         )
@@ -200,7 +203,7 @@ class PromptEncoder(nn.Module):
         if prototype_embeddings is not None:
             # Add learnable embedding token to each prototype
             B, N_proto, C = prototype_embeddings.shape
-            proto_token_embed = self.prototype_embedding.weight.unsqueeze(0).unsqueeze(0)  # [1, 1, C]
+            proto_token_embed = self.prototype_embedding.weight.unsqueeze(0)  # [1, 1, C]
             proto_token_embed = proto_token_embed.expand(B, N_proto, -1)  # [B, N_proto, C]
             prototype_embeddings = prototype_embeddings + proto_token_embed
             sparse_embeddings = torch.cat([sparse_embeddings, prototype_embeddings], dim=1)
@@ -211,5 +214,4 @@ class PromptEncoder(nn.Module):
             dense_embeddings = self.no_mask_embed.weight.reshape(1, -1, 1, 1).expand(
                 bs, -1, self.image_embedding_size[0], self.image_embedding_size[1]
             )
-
         return sparse_embeddings, dense_embeddings
