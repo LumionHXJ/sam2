@@ -72,8 +72,6 @@ class SAM2Train(SAM2Base):
         prototype_root=None,
         prob_use_prototype_for_train=0.0,
         prob_use_prototype_for_eval=0.0,
-        prob_use_prototype_as_only_for_train=0.0,
-        prob_use_prototype_as_only_for_eval=0.0,
         prob_negative_sample_for_train=0.0,
         prob_negative_sample_for_eval=0.0,
         prob_negative_prototype_for_train=0.0,
@@ -120,8 +118,6 @@ class SAM2Train(SAM2Base):
         self.prototype_root = prototype_root
         self.prob_use_prototype_for_train = prob_use_prototype_for_train
         self.prob_use_prototype_for_eval = prob_use_prototype_for_eval
-        self.prob_use_prototype_as_only_for_train = prob_use_prototype_as_only_for_train
-        self.prob_use_prototype_as_only_for_eval = prob_use_prototype_as_only_for_eval
         self.prob_negative_sample_for_train = prob_negative_sample_for_train
         self.prob_negative_sample_for_eval = prob_negative_sample_for_eval
         self.prob_negative_prototype_for_train = prob_negative_prototype_for_train
