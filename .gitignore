@@ -18,3 +18,4 @@ runs/*
 temp.ipynb
 *.pt
 .omc/
+.codex

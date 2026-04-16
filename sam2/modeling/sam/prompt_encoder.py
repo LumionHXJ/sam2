@@ -177,8 +177,8 @@ class PromptEncoder(nn.Module):
             and labels to embed.
           boxes (torch.Tensor or none): boxes to embed
           masks (torch.Tensor or none): masks to embed
-          prototype_embeddings (torch.Tensor or none): prototype character embeddings
-            with shape [B, N, embed_dim] where N is number of prototypes.
+          prototype_embeddings (torch.Tensor or none): prototype character prompt
+            embeddings with shape [B, N_proto, embed_dim].
 
         Returns:
           torch.Tensor: sparse embeddings for the points and boxes, with shape
@@ -193,15 +193,14 @@ class PromptEncoder(nn.Module):
         )
         if points is not None:
             coords, labels = points
-            point = self._embed_points(coords, labels, pad=(boxes is None))
+            point = self._embed_points(coords, labels, pad=False) # raw version with pad: train-inference inconsistency
             sparse_embeddings = torch.cat([sparse_embeddings, point], dim=1)
         if boxes is not None:
             box_embeddings = self._embed_boxes(boxes)
             sparse_embeddings = torch.cat([sparse_embeddings, box_embeddings], dim=1)
 
-        # NEW: Concatenate prototype embeddings with learnable token
+        # Concatenate prototype prompt embeddings with a learnable prototype token.
         if prototype_embeddings is not None:
-            # Add learnable embedding token to each prototype
             B, N_proto, C = prototype_embeddings.shape
             proto_token_embed = self.prototype_embedding.weight.unsqueeze(0)  # [1, 1, C]
             proto_token_embed = proto_token_embed.expand(B, N_proto, -1)  # [B, N_proto, C]

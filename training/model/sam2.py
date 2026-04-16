@@ -127,9 +127,12 @@ class SAM2Train(SAM2Base):
         self.prototype_loader = None
         if prototype_root is not None:
             from training.dataset.prototype_loader import PrototypeLoader
+            prototype_img_size = 224
+            if self.prototype_encoder is not None and hasattr(self.prototype_encoder, "img_size"):
+                prototype_img_size = self.prototype_encoder.img_size
             self.prototype_loader = PrototypeLoader(
                 prototype_root=prototype_root,
-                img_size=224,
+                img_size=prototype_img_size,
                 missing_as_zero=True,
             )
 
@@ -448,15 +451,15 @@ class SAM2Train(SAM2Base):
 
     def _prepare_prototype_batch(self, labels, device):
         """
-        Load and encode prototype character images into spatial tokens.
+        Load and encode prototype character images into prompt embeddings.
 
         Args:
             labels: List of label strings for batch.
             device: Torch device to place tensors on.
 
         Returns:
-            torch.Tensor: Spatial token embeddings with shape [B, num_patches, C],
-                         where num_patches=196 for 14x14 spatial grid, or None if no prototype loader.
+            torch.Tensor: Prototype prompt embeddings with shape [B, 1, C],
+                or None if no prototype loader.
         """
         if self.prototype_loader is None:
             return None
@@ -465,10 +468,10 @@ class SAM2Train(SAM2Base):
         prototype_imgs = self.prototype_loader.load_prototypes(labels)
         prototype_imgs = prototype_imgs.to(device)
 
-        # Encode prototypes into spatial tokens
-        spatial_embeddings = self.prototype_encoder(prototype_imgs)  # [B, 196, 256]
+        # Encode each prototype image into a single prompt token.
+        prototype_embeddings = self.prototype_encoder(prototype_imgs)  # [B, 1, 256]
 
-        return spatial_embeddings  # [B, 196, 256]
+        return prototype_embeddings  # [B, 1, 256]
 
     def _sample_negative_prompts(self, gt_masks):
         """
@@ -816,6 +819,16 @@ class SAM2Train(SAM2Base):
         all_pred_ious = [ious]
         all_point_inputs = [point_inputs]
         all_object_score_logits = [object_score_logits]
+        # Initialize sam_outputs with initial values (in case num_correction_pt_per_frame = 0)
+        sam_outputs = (
+            low_res_multimasks,
+            high_res_multimasks,
+            ious,
+            low_res_masks,
+            high_res_masks,
+            None,  # obj_ptr
+            object_score_logits,
+        )
         for _ in range(self.num_correction_pt_per_frame):
             # sample a new point from the error between prediction and ground-truth
             # (with a small probability, directly sample from GT masks instead of errors)

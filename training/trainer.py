@@ -1051,7 +1051,7 @@ class Trainer:
             if param in param_to_group:
                 group_idx = param_to_group[param]
                 lr = self.optim.optimizer.param_groups[group_idx]['lr']
-                logging.info(f"  {name}: {lr:.6e} (group {group_idx})")
+                logging.info(f"  {name}: {lr:.6e} (group {group_idx}, requires_grad: {param.requires_grad})")
             else:
                 logging.info(f"  {name}: NO_LR (not in optimizer)")
 

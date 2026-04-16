@@ -251,7 +251,7 @@ class PrototypeLoader:
     def __init__(
         self,
         prototype_root: str,
-        img_size: int = 224,
+        img_size: Union[int, Tuple[int, int]] = 224,
         missing_as_zero: bool = True,
     ):
         """
@@ -261,18 +261,29 @@ class PrototypeLoader:
             missing_as_zero: If True, return zero tensor for missing prototypes.
         """
         self.prototype_root = prototype_root
-        self.img_size = img_size
+        self.img_size = self._normalize_img_size(img_size)
+        height, width = self.img_size
         self.missing_as_zero = missing_as_zero
 
         # Standard ImageNet normalization
         self.transform = transforms.Compose([
-            transforms.Resize((img_size, img_size)),
+            transforms.Resize((height, width)),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             )
         ])
+
+    @staticmethod
+    def _normalize_img_size(img_size: Union[int, Tuple[int, int]]) -> Tuple[int, int]:
+        if isinstance(img_size, int):
+            return (img_size, img_size)
+        if len(img_size) != 2:
+            raise ValueError(
+                f"img_size must be an int or a tuple of length 2, got {img_size!r}"
+            )
+        return tuple(int(dim) for dim in img_size)
 
     def _load_single_prototype(self, label: Optional[str]) -> Optional[torch.Tensor]:
         """Load a single prototype image.
@@ -384,25 +395,22 @@ class SAM2ImagePredictorWithPrototype:
 
         # Prototype support
         self.prototype_root = prototype_root
-        self.prototype_loader = PrototypeLoader(prototype_root)
 
-        # Initialize prototype encoder
-        if prototype_encoder_config is None:
-            prototype_encoder_config = {
-                "embed_dim": 192,
-                "output_dim": 256,
-                "pretrained": True,
-                "freeze_backbone": False,
-                "model_name": "vit_tiny_patch16_224.augreg_in21k_ft_in1k",
-            }
-
-        # Check if model has prototype_encoder attribute
+        # Check if model has prototype_encoder attribute first
         if hasattr(self.model, 'prototype_encoder'):
             self.prototype_encoder = self.model.prototype_encoder
+            # Read img_size from model's prototype_encoder
+            loader_img_size = self.prototype_encoder.img_size
         else:
-            # Create a new prototype encoder
+            # Initialize prototype encoder from config
+            if prototype_encoder_config is None:
+                raise ValueError("prototype_encoder_config must be provided if model does not have prototype_encoder attribute")
+            loader_img_size = prototype_encoder_config.get("img_size")
             self.prototype_encoder = PrototypeEncoder(**prototype_encoder_config)
             logging.warning("Model does not have prototype_encoder attribute, using new instance")
+
+        # Initialize PrototypeLoader with correct img_size
+        self.prototype_loader = PrototypeLoader(prototype_root, img_size=loader_img_size)
 
     @classmethod
     def from_pretrained(cls, model_id: str, **kwargs) -> "SAM2ImagePredictorWithPrototype":
@@ -563,6 +571,18 @@ class SAM2ImagePredictorWithPrototype:
         if not self._is_image_set:
             raise RuntimeError(
                 "An image must be set with .set_image(...) before mask prediction."
+            )
+
+        # Check if prototype_uids is None and no other prompts provided
+        has_point_prompt = point_coords is not None
+        has_box_prompt = box is not None
+        has_mask_prompt = mask_input is not None
+        has_uid = prototype_uids is not None and any(uid is not None for uid in prototype_uids)
+
+        if not has_point_prompt and not has_box_prompt and not has_mask_prompt and not has_uid:
+            logging.warning(
+                "No prompts provided (prototype_uids is None/empty and no points/boxes/masks). "
+                "The model will run without guidance and may produce low-quality results."
             )
 
         # Transform input prompts
@@ -758,6 +778,18 @@ class SAM2ImagePredictorWithPrototype:
         This method is used by predict_batch() for each image in the batch.
         The decorator @handle_none_prototypes handles None values in prototype_uids.
         """
+        # Check if prototype_uids is None and no other prompts provided
+        has_point_prompt = point_coords is not None
+        has_box_prompt = box is not None
+        has_mask_prompt = mask_input is not None
+        has_uid = prototype_uids is not None and any(uid is not None for uid in prototype_uids)
+
+        if not has_point_prompt and not has_box_prompt and not has_mask_prompt and not has_uid:
+            logging.warning(
+                f"Image {img_idx}: No prompts provided (prototype_uids is None/empty and no points/boxes/masks). "
+                "The model will run without guidance and may produce low-quality results."
+            )
+
         # Transform input prompts
         mask_input, unnorm_coords, labels, unnorm_box = self._prep_prompts(
             point_coords, point_labels, box, mask_input, normalize_coords, img_idx
@@ -852,9 +884,8 @@ class SAM2ImagePredictorWithPrototype:
           return_logits (bool): If true, returns un-thresholded masks logits
             instead of a binary mask.
           img_idx (int): Index of the image in batch mode.
-          prototype_embeddings (torch.Tensor or None): Prototype character embeddings
-            with shape [B, N, 196, 256] where N is number of prototypes and 196 spatial tokens
-            preserve the 14x14 patch structure.
+          prototype_embeddings (torch.Tensor or None): Prototype character prompt
+            embeddings with shape [B, N_proto, 256].
 
         Returns:
           (torch.Tensor): The output masks in BxCxHxW format, where C is the
@@ -936,9 +967,8 @@ class SAM2ImagePredictorWithPrototype:
                 @handle_none_prototypes decorator handles filtering None values.
 
         Returns:
-            torch.Tensor: Prototype embeddings with shape [N, 196, 256],
-                where N is the number of valid input UIDs. The 196 spatial tokens
-                preserve the 14x14 patch structure from the encoder.
+            torch.Tensor: Prototype prompt embeddings with shape [N, 1, 256],
+                where N is the number of valid input UIDs.
                 Returns None if no valid prototypes found.
         """
         # Load prototype images
@@ -949,11 +979,11 @@ class SAM2ImagePredictorWithPrototype:
 
         prototype_images = prototype_images.to(self.device)
 
-        # Encode prototypes - returns [N, 196, 256]
+        # Encode prototypes into single-token prompt embeddings.
         with torch.autocast(device_type='cuda', dtype=torch.bfloat16):
             prototype_embeddings = self.prototype_encoder(prototype_images)
 
-        return prototype_embeddings  # [N, 196, 256]
+        return prototype_embeddings  # [N, 1, 256]
 
     def get_image_embedding(self) -> torch.Tensor:
         """

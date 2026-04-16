@@ -7,7 +7,7 @@
 """Prototype character image loader for category-guided training."""
 
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple, Union
 
 import torch
 from PIL import Image as PILImage
@@ -24,7 +24,7 @@ class PrototypeLoader:
     def __init__(
         self,
         prototype_root: str,
-        img_size: int = 224,
+        img_size: Union[int, Tuple[int, int]] = 224,
         missing_as_zero: bool = True,
     ):
         """
@@ -34,20 +34,31 @@ class PrototypeLoader:
             missing_as_zero: If True, return zero tensor for missing prototypes.
         """
         self.prototype_root = prototype_root
-        self.img_size = img_size
+        self.img_size = self._normalize_img_size(img_size)
+        height, width = self.img_size
         self.missing_as_zero = missing_as_zero
         self.missing_count = 0
         self.total_count = 0
 
         # Standard ImageNet normalization
         self.transform = transforms.Compose([
-            transforms.Resize((img_size, img_size)),
+            transforms.Resize((height, width)),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225]
             )
         ])
+
+    @staticmethod
+    def _normalize_img_size(img_size: Union[int, Tuple[int, int]]) -> Tuple[int, int]:
+        if isinstance(img_size, int):
+            return (img_size, img_size)
+        if len(img_size) != 2:
+            raise ValueError(
+                f"img_size must be an int or a tuple of length 2, got {img_size!r}"
+            )
+        return tuple(int(dim) for dim in img_size)
 
     def _load_single_prototype(self, label: Optional[str]) -> torch.Tensor:
         """Load a single prototype image."""
@@ -56,7 +67,7 @@ class PrototypeLoader:
         if label is None or not self.missing_as_zero:
             if label is None:
                 self.missing_count += 1
-            return torch.zeros(3, self.img_size, self.img_size)
+            return torch.zeros(3, *self.img_size)
 
         # Try both .png and .jpg extensions
         for ext in ['.png', '.jpg', '.jpeg']:
@@ -71,7 +82,7 @@ class PrototypeLoader:
 
         # If not found, return zero tensor
         self.missing_count += 1
-        return torch.zeros(3, self.img_size, self.img_size)
+        return torch.zeros(3, *self.img_size)
 
     def load_prototypes(self, labels: List[Optional[str]]) -> torch.Tensor:
         """
