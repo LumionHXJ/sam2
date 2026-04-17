@@ -72,10 +72,6 @@ class SAM2Train(SAM2Base):
         prototype_root=None,
         prob_use_prototype_for_train=0.0,
         prob_use_prototype_for_eval=0.0,
-        prob_negative_sample_for_train=0.0,
-        prob_negative_sample_for_eval=0.0,
-        prob_negative_prototype_for_train=0.0,
-        prob_negative_prototype_for_eval=0.0,
         **kwargs,
     ):
         super().__init__(image_encoder, memory_attention, memory_encoder, **kwargs)
@@ -118,10 +114,6 @@ class SAM2Train(SAM2Base):
         self.prototype_root = prototype_root
         self.prob_use_prototype_for_train = prob_use_prototype_for_train
         self.prob_use_prototype_for_eval = prob_use_prototype_for_eval
-        self.prob_negative_sample_for_train = prob_negative_sample_for_train
-        self.prob_negative_sample_for_eval = prob_negative_sample_for_eval
-        self.prob_negative_prototype_for_train = prob_negative_prototype_for_train
-        self.prob_negative_prototype_for_eval = prob_negative_prototype_for_eval
 
         # Initialize prototype loader if prototype_root is provided
         self.prototype_loader = None
@@ -136,11 +128,6 @@ class SAM2Train(SAM2Base):
                 missing_as_zero=True,
             )
 
-        # Build prototype pool for negative sampling
-        self.prototype_pool = None
-        if prototype_root is not None:
-            self.prototype_pool = self._build_prototype_pool(prototype_root)
-            logging.info(f"Built prototype pool with {len(self.prototype_pool)} UIDs")
 
         if freeze_image_encoder:
             for p in self.image_encoder.parameters():
@@ -249,23 +236,15 @@ class SAM2Train(SAM2Base):
             )
 
 
-        # NEW: Prototype and negative sampling for category-guided training
+        # NEW: Prototype sampling for category-guided training
         if self.training:
             prob_use_prototype = self.prob_use_prototype_for_train
-            prob_negative_sample = self.prob_negative_sample_for_train
-            prob_negative_prototype = self.prob_negative_prototype_for_train
         else:
             prob_use_prototype = self.prob_use_prototype_for_eval
-            prob_negative_sample = self.prob_negative_sample_for_eval
-            prob_negative_prototype = self.prob_negative_prototype_for_eval
 
-        # Independent sampling for prototype and negative
+        # Decide whether to use prototype
         use_prototype = (prob_use_prototype > 0 and
                        self.rng.random() < prob_use_prototype)
-        use_negative = (prob_negative_sample > 0 and
-                      self.rng.random() < prob_negative_sample)
-        use_negative_prototype = (prob_negative_prototype > 0 and
-                                 self.rng.random() < prob_negative_prototype)
 
         # Ensure at least one input source is used (classic prompt or prototype).
         if not use_prompt_input and not use_prototype:
@@ -293,8 +272,6 @@ class SAM2Train(SAM2Base):
 
         # Store sampling decisions
         backbone_out["use_prototype"] = use_prototype
-        backbone_out["use_negative"] = use_negative
-        backbone_out["use_negative_prototype"] = use_negative_prototype
 
         # Extract labels from input for prototype loading
         if hasattr(input, "labels") and input.labels is not None:
@@ -324,15 +301,6 @@ class SAM2Train(SAM2Base):
         backbone_out["point_inputs_per_frame"] = {}  # {frame_idx: <input_points>}
         # NEW: Handle prototype inputs for category-guided training
         backbone_out["prototype_embeddings_per_frame"] = {}  # {frame_idx: [B, 1, C]}
-        # Mark frames that use negative prototypes (to set gt_mask to all zeros)
-        backbone_out["negative_prototype_frames"] = set()
-
-        # Backup original GT masks for point sampling (before any modifications)
-        original_gt_masks_per_frame = {
-            stage_id: masks.clone()
-            for stage_id, masks in gt_masks_per_frame.items()
-        }
-        backbone_out["original_gt_masks_per_frame"] = original_gt_masks_per_frame
 
         for t in init_cond_frames:
             # Handle prototype inputs
@@ -340,56 +308,12 @@ class SAM2Train(SAM2Base):
                 # Get labels for this frame
                 frame_labels = backbone_out["labels_per_frame"][t] if t < len(backbone_out["labels_per_frame"]) else []
 
-                if use_negative_prototype:
-                    # Use negative prototypes instead of positive ones
-                    # Determine number of negatives (1:1 or fewer)
-                    valid_labels = [l for l in frame_labels if l is not None]
-                    num_negatives = len(valid_labels)
-                    if num_negatives > 0:
-                        # Sample negative prototypes
-                        negative_labels = self._sample_negative_prototypes(frame_labels, num_negatives)
-                        # Encode negative prototypes
-                        prototype_embeddings = self._prepare_prototype_batch(
-                            negative_labels, device=torch.device("cuda")
-                        )
-                        if prototype_embeddings is not None:
-                            backbone_out["prototype_embeddings_per_frame"][t] = prototype_embeddings
-                            # Mark this frame as using negative prototypes
-                            backbone_out["negative_prototype_frames"].add(t)
-                            # Set gt_mask to all zeros (background) for negative prototypes
-                            B, _, H, W = gt_masks_per_frame[t].shape
-                            gt_masks_per_frame[t] = torch.zeros(B, 1, H, W, device=gt_masks_per_frame[t].device, dtype=torch.bool)
-                            input.masks[t] = torch.zeros(B, H, W, device=input.masks[t].device, dtype=torch.bool) # 修改input mask的引用，从而使得loss计算正确应用
-                else:
-                    # Use positive prototypes (existing logic)
-                    prototype_embeddings = self._prepare_prototype_batch(
-                        frame_labels, device=torch.device("cuda")
-                    )
-                    if prototype_embeddings is not None:
-                        backbone_out["prototype_embeddings_per_frame"][t] = prototype_embeddings
-
-            # Handle negative sampling
-            if use_negative and (backbone_out.get("labels_per_frame") is not None):
-                # Sample negative prompts from background
-                negative_prompts = self._sample_negative_prompts(gt_masks_per_frame[t])
-                # Check if negative prompts were successfully generated
-                if negative_prompts["point_coords"].numel() > 0:
-                    # Set gt_mask to all zeros (background) for negative prompts
-                    B, _, H, W = gt_masks_per_frame[t].shape
-                    gt_masks_per_frame[t] = torch.zeros(B, 1, H, W, device=gt_masks_per_frame[t].device, dtype=torch.bool)
-                    input.masks[t] = torch.zeros(B, H, W, device=input.masks[t].device, dtype=torch.bool) # 修改input mask的引用，从而使得loss计算正确应用
-                # Merge with existing point inputs (if any)
-                existing_point_inputs = backbone_out["point_inputs_per_frame"].get(t, None)
-                if existing_point_inputs is not None:
-                    # Concatenate existing points with negative points
-                    merged_points = concat_points(
-                        existing_point_inputs,
-                        negative_prompts["point_coords"],
-                        negative_prompts["point_labels"]
-                    )
-                    backbone_out["point_inputs_per_frame"][t] = merged_points
-                else:
-                    backbone_out["point_inputs_per_frame"][t] = negative_prompts
+                # Use positive prototypes
+                prototype_embeddings = self._prepare_prototype_batch(
+                    frame_labels, device=torch.device("cuda")
+                )
+                if prototype_embeddings is not None:
+                    backbone_out["prototype_embeddings_per_frame"][t] = prototype_embeddings
 
             # Keep legacy behavior when classic prompts are enabled:
             # use_pt_input=False means mask prompt + a correction box on frame 1.
@@ -428,10 +352,7 @@ class SAM2Train(SAM2Base):
                     backbone_out["point_inputs_per_frame"][t] = point_inputs
 
         # Sample frames where we will add correction clicks on the fly
-        # Disable iterative correction when using negative samples
-        if use_negative or use_negative_prototype:
-            frames_to_add_correction_pt = []
-        elif use_prototype:
+        if use_prototype:
             # Allow iterative correction when using positive prototype
             if num_frames_to_correct == num_init_cond_frames:
                 frames_to_add_correction_pt = init_cond_frames
@@ -564,65 +485,7 @@ class SAM2Train(SAM2Base):
             "point_labels": torch.cat(labels_list, dim=0).to(gt_masks.device)
         }
 
-    def _build_prototype_pool(self, prototype_root: str):
-        """
-        Build a list of all available prototype UIDs from the directory.
 
-        Args:
-            prototype_root: Path to the prototype root directory.
-
-        Returns:
-            List[str]: List of prototype UIDs.
-        """
-        import os
-        pool = []
-        for filename in os.listdir(prototype_root):
-            # Extract UID from filename (remove extension)
-            uid, _ = os.path.splitext(filename)
-            if uid:  # Skip empty names
-                pool.append(uid)
-        return pool
-
-    def _sample_negative_prototypes(
-        self,
-        positive_labels,
-        num_negatives
-    ):
-        """
-        Sample negative prototype UIDs not in the current frame.
-
-        Args:
-            positive_labels: List of positive label strings for the current frame.
-            num_negatives: Number of negative prototypes to sample.
-
-        Returns:
-            List[Optional[str]]: List of negative prototype UIDs.
-        """
-        if self.prototype_pool is None:
-            return [None] * num_negatives
-
-        # Get valid positive labels (non-None)
-        valid_positives = [label for label in positive_labels if label is not None]
-        if not valid_positives:
-            return [None] * num_negatives
-
-        # Create a set of labels to exclude
-        exclude_set = set(valid_positives)
-
-        # Filter pool to exclude current frame labels
-        available_negatives = [uid for uid in self.prototype_pool if uid not in exclude_set]
-
-        if not available_negatives:
-            return [None] * num_negatives
-
-        # Sample num_negatives from available pool (with replacement if needed)
-        selected = self.rng.choice(
-            len(available_negatives),
-            min(num_negatives, len(available_negatives)),
-            replace=len(available_negatives) < num_negatives
-        )
-
-        return [available_negatives[i] for i in selected]
 
     def forward_tracking(
         self, backbone_out, input: BatchedVideoDatapoint, return_dict=False

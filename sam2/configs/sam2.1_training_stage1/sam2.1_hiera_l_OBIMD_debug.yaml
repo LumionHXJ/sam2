@@ -248,12 +248,6 @@ trainer:
     # Probability of using prototype prompts
     prob_use_prototype_for_train: 0.7
     prob_use_prototype_for_eval: 1.0
-    # Probability of using negative sampling (background points)
-    prob_negative_sample_for_train: 0.0
-    prob_negative_sample_for_eval: 0.0
-    # Probability of using negative prototype sampling
-    prob_negative_prototype_for_train: 0.0
-    prob_negative_prototype_for_eval: 0.0
 
   data:
     train:
