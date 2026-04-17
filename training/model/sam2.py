@@ -327,6 +327,13 @@ class SAM2Train(SAM2Base):
         # Mark frames that use negative prototypes (to set gt_mask to all zeros)
         backbone_out["negative_prototype_frames"] = set()
 
+        # Backup original GT masks for point sampling (before any modifications)
+        original_gt_masks_per_frame = {
+            stage_id: masks.clone()
+            for stage_id, masks in gt_masks_per_frame.items()
+        }
+        backbone_out["original_gt_masks_per_frame"] = original_gt_masks_per_frame
+
         for t in init_cond_frames:
             # Handle prototype inputs
             if use_prototype and (backbone_out.get("labels_per_frame") is not None):
@@ -352,6 +359,7 @@ class SAM2Train(SAM2Base):
                             # Set gt_mask to all zeros (background) for negative prototypes
                             B, _, H, W = gt_masks_per_frame[t].shape
                             gt_masks_per_frame[t] = torch.zeros(B, 1, H, W, device=gt_masks_per_frame[t].device, dtype=torch.bool)
+                            input.masks[t] = torch.zeros(B, H, W, device=input.masks[t].device, dtype=torch.bool) # 修改input mask的引用，从而使得loss计算正确应用
                 else:
                     # Use positive prototypes (existing logic)
                     prototype_embeddings = self._prepare_prototype_batch(
@@ -369,6 +377,7 @@ class SAM2Train(SAM2Base):
                     # Set gt_mask to all zeros (background) for negative prompts
                     B, _, H, W = gt_masks_per_frame[t].shape
                     gt_masks_per_frame[t] = torch.zeros(B, 1, H, W, device=gt_masks_per_frame[t].device, dtype=torch.bool)
+                    input.masks[t] = torch.zeros(B, H, W, device=input.masks[t].device, dtype=torch.bool) # 修改input mask的引用，从而使得loss计算正确应用
                 # Merge with existing point inputs (if any)
                 existing_point_inputs = backbone_out["point_inputs_per_frame"].get(t, None)
                 if existing_point_inputs is not None:
@@ -398,14 +407,17 @@ class SAM2Train(SAM2Base):
                     # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
                     use_box_input = self.rng.random() < prob_to_use_box_input
                     if use_box_input:
+                        gt_mask_for_sampling = backbone_out["original_gt_masks_per_frame"][t]
                         points, labels = sample_box_points(
-                            gt_masks_per_frame[t],
+                            gt_mask_for_sampling,
                         )
                     else:
                         # (here we only sample **one initial point** on initial conditioning frames from the
                         # ground-truth mask; we may sample more correction points on the fly)
+                        # Use original GT mask for point sampling (not the modified one)
+                        gt_mask_for_sampling = backbone_out["original_gt_masks_per_frame"][t]
                         points, labels = get_next_point(
-                            gt_masks=gt_masks_per_frame[t],
+                            gt_masks=gt_mask_for_sampling,
                             pred_masks=None,
                             method=(
                                 "uniform" if self.training else self.pt_sampling_for_eval
@@ -416,14 +428,15 @@ class SAM2Train(SAM2Base):
                     backbone_out["point_inputs_per_frame"][t] = point_inputs
 
         # Sample frames where we will add correction clicks on the fly
-        # based on the error between prediction and ground-truth masks
-        if use_prototype:
-            # Allow iterative correction when using prototype as alternative prompt
+        # Disable iterative correction when using negative samples
+        if use_negative or use_negative_prototype:
+            frames_to_add_correction_pt = []
+        elif use_prototype:
+            # Allow iterative correction when using positive prototype
             if num_frames_to_correct == num_init_cond_frames:
                 frames_to_add_correction_pt = init_cond_frames
             else:
                 assert num_frames_to_correct > num_init_cond_frames
-                # initial cond frame + randomly selected remaining frames (without replacement)
                 extra_num = num_frames_to_correct - num_init_cond_frames
                 frames_to_add_correction_pt = (
                     init_cond_frames

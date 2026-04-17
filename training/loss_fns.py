@@ -286,9 +286,10 @@ class MultiStepMultiMasksAndIous(nn.Module):
             loss_iou = loss_multiiou
 
         # backprop focal, dice and iou loss only if obj present
-        loss_mask = loss_mask * target_obj
-        loss_dice = loss_dice * target_obj
-        loss_iou = loss_iou * target_obj
+        # WARNING: ACTIVATE MASK / DICE FOR NEGATIVE MASKS
+        # loss_mask = loss_mask * target_obj
+        # loss_dice = loss_dice * target_obj
+        # loss_iou = loss_iou * target_obj
 
         # sum over batch dimension (note that the losses are already divided by num_objects)
         losses["loss_mask"] += loss_mask.sum()
