@@ -306,7 +306,7 @@ class SAM2Train(SAM2Base):
             # Handle prototype inputs
             if use_prototype and (backbone_out.get("labels_per_frame") is not None):
                 # Get labels for this frame
-                frame_labels = backbone_out["labels_per_frame"][t] if t < len(backbone_out["labels_per_frame"]) else []
+                frame_labels = backbone_out["labels_per_frame"][t]
 
                 # Use positive prototypes
                 prototype_embeddings = self._prepare_prototype_batch(
@@ -321,27 +321,19 @@ class SAM2Train(SAM2Base):
             if use_prompt_input:
                 if not use_pt_input:  # for misalign correction
                     backbone_out["mask_inputs_per_frame"][t] = gt_masks_per_frame[t]
-                    # sample box input for second frame
-                    points, labels = sample_box_points(
-                        gt_masks_per_frame[1],
-                     )
-                    point_inputs = {"point_coords": points, "point_labels": labels}
-                    backbone_out["point_inputs_per_frame"][1] = point_inputs
                 else:
                     # During training # P(box) = prob_to_use_pt_input * prob_to_use_box_input
                     use_box_input = self.rng.random() < prob_to_use_box_input
                     if use_box_input:
-                        gt_mask_for_sampling = backbone_out["original_gt_masks_per_frame"][t]
                         points, labels = sample_box_points(
-                            gt_mask_for_sampling,
+                            gt_masks_per_frame[t],
                         )
                     else:
                         # (here we only sample **one initial point** on initial conditioning frames from the
                         # ground-truth mask; we may sample more correction points on the fly)
                         # Use original GT mask for point sampling (not the modified one)
-                        gt_mask_for_sampling = backbone_out["original_gt_masks_per_frame"][t]
                         points, labels = get_next_point(
-                            gt_masks=gt_mask_for_sampling,
+                            gt_masks=gt_masks_per_frame[t],
                             pred_masks=None,
                             method=(
                                 "uniform" if self.training else self.pt_sampling_for_eval
@@ -406,86 +398,6 @@ class SAM2Train(SAM2Base):
         prototype_embeddings = self.prototype_encoder(prototype_imgs)  # [B, 1, 256]
 
         return prototype_embeddings  # [B, 1, 256]
-
-    def _sample_negative_prompts(self, gt_masks):
-        """
-        Sample negative prompts (simulating incorrect clicks/boxes).
-
-        Robustness improvement: Reject generation if no foreground exists.
-        Uses either point or box based on prob_to_use_box_input_for_train.
-
-        Args:
-            gt_masks: Ground truth masks [B, 1, H, W].
-
-        Returns:
-            dict: Negative prompts with "point_coords" and "point_labels".
-                  Returns empty tensors if no foreground found.
-        """
-        from sam2.utils.misc import mask_to_box
-        B, _, H, W = gt_masks.shape
-
-        # Sample a fixed number of prompts for all batches
-        num_prompts = 1  # Only sample one negative point
-
-        points_list = []
-        labels_list = []
-
-        # Use box or point based on prob_to_use_box_input_for_train
-        use_box = self.rng.random() < self.prob_to_use_box_input_for_train
-
-        for b in range(B):
-            mask = gt_masks[b, 0].cpu()
-
-            # Check if there is any foreground
-            fg_indices = torch.where(mask)
-            if fg_indices[0].numel() == 0:
-                # No foreground: reject generation, return empty for this batch
-                continue
-
-            if use_box:
-                # Sample negative box: random box anywhere (not based on gt mask)
-                # Label 2=top_left, 3=bottom_right for box corners
-                x1, x2 = self.rng.integers(0, W, 2, endpoint=False)
-                y1, y2 = self.rng.integers(0, H, 2, endpoint=False)
-                x1, x2 = sorted([x1, x2])
-                y1, y2 = sorted([y1, y2])
-
-                points = torch.tensor([[[x1, y1], [x2, y2]]], dtype=torch.float32)
-                labels = torch.tensor([[2, 3]], dtype=torch.long)  # box corner labels
-            else:
-                # Sample negative points: random points anywhere
-                # Simulating incorrect clicks with label=1 (foreground) but gt_mask=all-0
-                y_coords = self.rng.integers(0, H, num_prompts)
-                x_coords = self.rng.integers(0, W, num_prompts)
-
-                points = torch.tensor([
-                    [x_coords[i], y_coords[i]]
-                    for i in range(num_prompts)
-                ], dtype=torch.float32).unsqueeze(0)
-
-                labels = torch.ones(1, num_prompts, dtype=torch.long)  # label=1 for point
-
-            points_list.append(points)
-            labels_list.append(labels)
-
-        if not points_list:
-            # No valid batches, return empty tensors
-            return {
-                "point_coords": torch.zeros(B, 0, 2, device=gt_masks.device),
-                "point_labels": torch.zeros(B, 0, dtype=torch.long, device=gt_masks.device)
-            }
-
-        # Pad to maintain batch size consistency
-        while len(points_list) < B:
-            points_list.append(torch.zeros(1, 0, 2))
-            labels_list.append(torch.zeros(1, 0, dtype=torch.long))
-
-        return {
-            "point_coords": torch.cat(points_list, dim=0).to(gt_masks.device),
-            "point_labels": torch.cat(labels_list, dim=0).to(gt_masks.device)
-        }
-
-
 
     def forward_tracking(
         self, backbone_out, input: BatchedVideoDatapoint, return_dict=False

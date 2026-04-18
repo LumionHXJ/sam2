@@ -1,14 +1,14 @@
 # @package _global_
 scratch:
   resolution: 1024
-  train_batch_size: 2
+  train_batch_size: 8
   num_train_workers: 4
   num_frames: 1
   max_num_objects: 4
-  base_lr: 1e-3
+  base_lr: 5e-4
   vision_lr: 0
   phases_per_epoch: 1
-  num_epochs: 20
+  num_epochs: 50
 
 dataset:
   # PATHS to Dataset
@@ -37,31 +37,31 @@ vos:
         - _target_: training.dataset.transforms.RandomGrayscale
           p: 0.05
           consistent_transform: True
-        # ======================================
-        # NEW: Rubbing-specific data augmentation
-        # ======================================
+        # # ======================================
+        # # NEW: Rubbing-specific data augmentation
+        # # ======================================
 
-        # Random morphology (dilation/erosion) - simulates rubbing quality variations
-        # p: probability of applying (0.5 = 50%)
-        # kernel_size_range: range of morphological kernel size (larger = more dramatic effect)
-        # operation: 'random' (mix of dilate/erode), 'dilate', or 'erode'
-        # iterations_range: number of times to apply the operation
-        - _target_: training.dataset.transforms.RandomMorphology
-          p: 0.5
-          kernel_size_range: [3, 7]  # Try odd numbers for elliptical kernel
-          operation: random
-          iterations_range: [1, 3]
-          consistent_transform: True
+        # # Random morphology (dilation/erosion) - simulates rubbing quality variations
+        # # p: probability of applying (0.5 = 50%)
+        # # kernel_size_range: range of morphological kernel size (larger = more dramatic effect)
+        # # operation: 'random' (mix of dilate/erode), 'dilate', or 'erode'
+        # # iterations_range: number of times to apply the operation
+        # - _target_: training.dataset.transforms.RandomMorphology
+        #   p: 0.5
+        #   kernel_size_range: [3, 7]  # Try odd numbers for elliptical kernel
+        #   operation: random
+        #   iterations_range: [1, 3]
+        #   consistent_transform: True
 
-        # Random rubbing dropout - simulates natural breaks/white spaces in rubbing
-        # p: probability of applying (0.3 = 30%)
-        # num_drops_range: number of dropout patches to add
-        # drop_size_range: size of each dropout patch
-        - _target_: training.dataset.transforms.RandomRubbingDropout
-          p: 0.3
-          num_drops_range: [1, 5]
-          drop_size_range: [10, 50]
-          consistent_transform: True
+        # # Random rubbing dropout - simulates natural breaks/white spaces in rubbing
+        # # p: probability of applying (0.3 = 30%)
+        # # num_drops_range: number of dropout patches to add
+        # # drop_size_range: size of each dropout patch
+        # - _target_: training.dataset.transforms.RandomRubbingDropout
+        #   p: 0.3
+        #   num_drops_range: [1, 5]
+        #   drop_size_range: [10, 50]
+        #   consistent_transform: True
 
         # Color jitter (independent - different per frame)
         - _target_: training.dataset.transforms.ColorJitter
@@ -221,7 +221,7 @@ trainer:
     # box/point input and corrections
     prob_to_use_pt_input_for_train: 0.0 # 图像默认1.0（这一项留给视频用）
     prob_to_use_pt_input_for_eval: 0.0
-    prob_to_use_prompt_input_for_train: 0.7 # 使用经典SAM的prompt input
+    prob_to_use_prompt_input_for_train: 0.0 # 使用经典SAM的prompt input
     prob_to_use_prompt_input_for_eval: 0.0
     prob_to_use_box_input_for_train: 0.75 # 0.5*0.5 = 0.25 prob to use box instead of points
     prob_to_use_box_input_for_eval: 0.0
@@ -233,7 +233,7 @@ trainer:
     # maximum 2 initial conditioning frames
     num_init_cond_frames_for_train: 1 # first frame give misalign mask, second one input box / points
     rand_init_cond_frames_for_train: False # random 1~2
-    num_correction_pt_per_frame: 7
+    num_correction_pt_per_frame: 0
     use_act_ckpt_iterative_pt_sampling: false
 
     num_init_cond_frames_for_eval: 1 # only mask on first frame
@@ -246,7 +246,7 @@ trainer:
     # Path to prototype character images (字头)
     prototype_root: data/镜原数据库/OBIMD训练集字头
     # Probability of using prototype prompts
-    prob_use_prototype_for_train: 0.7
+    prob_use_prototype_for_train: 1.0
     prob_use_prototype_for_eval: 1.0
 
   data:

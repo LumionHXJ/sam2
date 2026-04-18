@@ -63,26 +63,12 @@ class PrototypeLoader:
     def _load_single_prototype(self, label: Optional[str]) -> torch.Tensor:
         """Load a single prototype image."""
         self.total_count += 1
-
-        if label is None or not self.missing_as_zero:
-            if label is None:
-                self.missing_count += 1
-            return torch.zeros(3, *self.img_size)
-
-        # Try both .png and .jpg extensions
+        assert label is not None, "Label must be provided for prototype loading"
         for ext in ['.png', '.jpg', '.jpeg']:
             img_path = os.path.join(self.prototype_root, f"{label}{ext}")
             if os.path.exists(img_path):
-                try:
-                    img = PILImage.open(img_path).convert('RGB')
-                    return self.transform(img)
-                except Exception as e:
-                    print(f"Warning: Failed to load {img_path}: {e}")
-                    break
-
-        # If not found, return zero tensor
-        self.missing_count += 1
-        return torch.zeros(3, *self.img_size)
+                img = PILImage.open(img_path).convert('RGB')
+                return self.transform(img)
 
     def load_prototypes(self, labels: List[Optional[str]]) -> torch.Tensor:
         """
